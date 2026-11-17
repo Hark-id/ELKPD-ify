@@ -8,6 +8,8 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+
+const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function open(port, mobile) {
@@ -34,7 +36,7 @@ let failures = 0;
 const check = (n, c, d = '') => { console.log((c ? 'PASS' : 'FAIL') + '  ' + n + (d ? '  — ' + d : '')); if (!c) failures++; };
 
 async function intoRoom(s) {
-  await s.send('Page.navigate', { url: 'https://lkpd-cerpen-gate.pages.dev/' });
+  await s.send('Page.navigate', { url: LIVE });
   await sleep(2600);
   await s.ev(`try{localStorage.setItem('lkpd-cerpen-name:diag-diagnosticroom','CG')}catch(e){}`);
   await s.ev(`document.getElementById('code').value='DIAGNOSTICROOM'`);

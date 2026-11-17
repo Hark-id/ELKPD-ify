@@ -8,6 +8,8 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+
+const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const d = mkdtempSync(join(tmpdir(), 'cg2-'));
 const c = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--remote-debugging-port=9790', `--user-data-dir=${d}`, '--no-first-run', '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
@@ -28,7 +30,7 @@ let failures = 0;
 const check = (n, cond, d2 = '') => { console.log((cond ? 'PASS' : 'FAIL') + '  ' + n + (d2 ? '  — ' + d2 : '')); if (!cond) failures++; };
 
 await send('Page.enable'); await send('Runtime.enable');
-await send('Page.navigate', { url: 'https://lkpd-cerpen-gate.pages.dev/' });
+await send('Page.navigate', { url: LIVE });
 await sleep(2600);
 await ev(`try{localStorage.setItem('lkpd-cerpen-name:diag-diagnosticroom','CG2')}catch(e){}`);
 await ev(`document.getElementById('code').value='DIAGNOSTICROOM'`);
