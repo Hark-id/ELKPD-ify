@@ -3,8 +3,14 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = findChrome();
+
+/* The admin code is a SECRET. Never hardcode it: set ELKPD_ADMIN_CODE
+   in your environment. The fallback is deliberately invalid. */
+const ADMIN_CODE = process.env.ELKPD_ADMIN_CODE || 'ADMIN-NOT-SET';
+
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const dir = mkdtempSync(join(tmpdir(), 'cdp-live-admin-'));
@@ -131,7 +137,7 @@ const afterD = JSON.parse(await ev(`JSON.stringify({
 check('D: gate received the card', afterD.onGate && afterD.cardW === 430 && afterD.nameCleared === null, JSON.stringify(afterD));
 
 /* --- E: admin console --- */
-await ev(`document.getElementById('code').value = 'ADMIN!@#$%^'`);
+await ev(`document.getElementById('code').value = ADMIN_CODE`);
 await ev(`document.getElementById('btn-join').click()`);
 await sleep(2600);
 const adm = JSON.parse(await ev(`JSON.stringify({

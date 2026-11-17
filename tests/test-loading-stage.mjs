@@ -8,8 +8,10 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = findChrome();
+
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

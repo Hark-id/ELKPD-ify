@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel a superseded run on the same ref — a new push makes the old
+# result irrelevant, and the browser suites are the slow part.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # Fast, no browser: does the committed source still assemble, and does
+  # every file parse? This is the gate that catches the most common
+  # mistake — editing build/ by hand, or a syntax error in a Worker.
+  # ------------------------------------------------------------------
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Assemble the deployable layout
+        run: node scripts/sync.mjs
+
+      - name: Verify build/ matches src/ (no hand-edited output)
+        run: node scripts/sync.mjs --check
+
+      - name: Syntax-check every JavaScript file
+        run: |
+          set -e
+          fail=0
+          for f in $(git ls-files '*.js' '*.mjs'); do
+            if ! node --check "$f" 2>/dev/null; then
+              echo "::error file=$f::Syntax error"
+              node --check "$f" || true
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Guard against committed secrets
+        run: |
+          set -e
+          # The admin code and session secret must never appear in the tree.
+          # These patterns are deliberately broad: a false positive is cheap,
+          # a leaked admin code is not.
+          # .dev.vars.example documents the FORMAT, so it is excluded.
+          if git grep -nE 'ADMIN[~`!@#$%^&*()_=+]{6}' -- . ':!*.md' ':!reference/*' ':!*.example'; then
+            echo "::error::A literal admin code appears in the tree. Use ELKPD_ADMIN_CODE instead."
+            exit 1
+          fi
+          if git grep -nE 'SESSION_SECRET\s*=\s*"[^"]{16,}"' -- . ':!*.md' ':!*.example'; then
+            echo "::error::A literal SESSION_SECRET appears in the tree."
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.dev\.vars$'; then
+            echo "::error::.dev.vars is committed. It must stay local."
+            exit 1
+          fi
+          echo "No committed secrets found."
+
+  # ------------------------------------------------------------------
+  # The browser suites. They run against a DEPLOYED url, so they need
+  # the deployment to exist. On a PR from a fork the secrets are not
+  # available, so this job is skipped rather than failed.
+  # ------------------------------------------------------------------
+  browser:
+    name: Browser suites
+    runs-on: ubuntu-latest
+    needs: static
+    # Only run where the target URL is configured. Set ELKPD_URL as a
+    # repository variable (Settings -> Variables) to enable this job.
+    if: vars.ELKPD_URL != ''
+    env:
+      ELKPD_URL: ${{ vars.ELKPD_URL }}
+      ELKPD_ADMIN_CODE: ${{ secrets.ELKPD_ADMIN_CODE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Run the suites
+        run: |
+          set -e
+          # Suites that need no admin session.
+          for t in test-case test-fold test-pin test-btngroup test-btngroup2 \
+                   test-loading-stage test-indicator test-race test-sitewide; do
+            echo "::group::$t"
+            node "tests/$t.mjs"
+            echo "::endgroup::"
+          done
+
+      - name: Run the admin suites
+        if: env.ELKPD_ADMIN_CODE != ''
+        run: |
+          set -e
+          for t in test-blue live-admin live-mobile; do
+            echo "::group::$t"
+            node "tests/$t.mjs"
+            echo "::endgroup::"
+          done
+
+      - name: Note skipped admin suites
+        if: env.ELKPD_ADMIN_CODE == ''
+        run: |
+          echo "::warning::ELKPD_ADMIN_CODE is not set, so the admin suites were skipped."

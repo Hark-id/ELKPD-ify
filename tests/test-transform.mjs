@@ -4,8 +4,10 @@ import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = findChrome();
+
 let PORT = 9300;
 const GATE = 'file:///C:/Users/haufa/.zcode/workspace/draft-26cce703-4e51-4a8c-a6a1-75d67f686644/gate-test.html';
 const SHEET = 'file:///C:/Users/haufa/.zcode/workspace/draft-26cce703-4e51-4a8c-a6a1-75d67f686644/worksheet-test.html';

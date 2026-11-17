@@ -3,8 +3,14 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = findChrome();
+
+/* The admin code is a SECRET. Never hardcode it: set ELKPD_ADMIN_CODE
+   in your environment. The fallback is deliberately invalid. */
+const ADMIN_CODE = process.env.ELKPD_ADMIN_CODE || 'ADMIN-NOT-SET';
+
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const dir = mkdtempSync(join(tmpdir(), 'cdp-mobile-'));
@@ -158,7 +164,7 @@ await ev(`document.getElementById('name-form').dispatchEvent(new Event('submit',
 await sleep(1500);
 await ev(`fetch('/api/logout', {method:'POST'}).then(()=>location.reload())`);
 await sleep(2200);
-await ev(`document.getElementById('code').value = 'ADMIN!@#$%^'`);
+await ev(`document.getElementById('code').value = ADMIN_CODE`);
 await ev(`document.getElementById('btn-join').click()`);
 /* the admin login now passes through the loading square (~650ms morph
    + the response), so allow for the full choreography */

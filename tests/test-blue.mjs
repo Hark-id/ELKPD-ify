@@ -5,8 +5,14 @@ import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = findChrome();
+
+/* The admin code is a SECRET. Never hardcode it: set ELKPD_ADMIN_CODE
+   in your environment. The fallback is deliberately invalid. */
+const ADMIN_CODE = process.env.ELKPD_ADMIN_CODE || 'ADMIN-NOT-SET';
+
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -180,7 +186,7 @@ async function main() {
     await runSurface('admin', s, async () => {
       await s.send('Page.navigate', { url: LIVE });
       await sleep(2400);
-      await s.ev(`fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'ADMIN!@#$%^'})}).then(r=>r.status)`);
+      await s.ev(`fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:ADMIN_CODE})}).then(r=>r.status)`);
       await s.send('Page.navigate', { url: LIVE });
       await sleep(2600);
     });

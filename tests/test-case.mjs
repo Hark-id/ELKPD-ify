@@ -6,9 +6,10 @@ import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { findChrome } from './helpers.mjs';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const d = mkdtempSync(join(tmpdir(), 'case-'));
-const c = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', '--remote-debugging-port=9800', `--user-data-dir=${d}`, '--no-first-run', '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
+const c = spawn(findChrome(), ['--headless=new', '--remote-debugging-port=9800', `--user-data-dir=${d}`, '--no-first-run', '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
 let t = null;
 for (let i = 0; i < 50; i++) { await sleep(200); try { const l = await (await fetch('http://127.0.0.1:9800/json/list')).json(); t = l.find(x => x.type === 'page'); if (t) break; } catch { } }
 const ws = new WebSocket(t.webSocketDebuggerUrl);
