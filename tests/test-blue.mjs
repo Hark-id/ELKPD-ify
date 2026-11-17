@@ -186,7 +186,7 @@ async function main() {
     await runSurface('admin', s, async () => {
       await s.send('Page.navigate', { url: LIVE });
       await sleep(2400);
-      await s.ev(`fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:ADMIN_CODE})}).then(r=>r.status)`);
+      await s.ev(`fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:${JSON.stringify(ADMIN_CODE)}})}).then(r=>r.status)`);
       await s.send('Page.navigate', { url: LIVE });
       await sleep(2600);
     });

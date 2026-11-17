@@ -137,7 +137,7 @@ const afterD = JSON.parse(await ev(`JSON.stringify({
 check('D: gate received the card', afterD.onGate && afterD.cardW === 430 && afterD.nameCleared === null, JSON.stringify(afterD));
 
 /* --- E: admin console --- */
-await ev(`document.getElementById('code').value = ADMIN_CODE`);
+await ev(`document.getElementById("code").value = ${JSON.stringify(ADMIN_CODE)}`);
 await ev(`document.getElementById('btn-join').click()`);
 await sleep(2600);
 const adm = JSON.parse(await ev(`JSON.stringify({

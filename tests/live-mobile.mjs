@@ -164,7 +164,7 @@ await ev(`document.getElementById('name-form').dispatchEvent(new Event('submit',
 await sleep(1500);
 await ev(`fetch('/api/logout', {method:'POST'}).then(()=>location.reload())`);
 await sleep(2200);
-await ev(`document.getElementById('code').value = ADMIN_CODE`);
+await ev(`document.getElementById("code").value = ${JSON.stringify(ADMIN_CODE)}`);
 await ev(`document.getElementById('btn-join').click()`);
 /* the admin login now passes through the loading square (~650ms morph
    + the response), so allow for the full choreography */
