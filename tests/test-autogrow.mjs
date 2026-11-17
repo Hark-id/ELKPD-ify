@@ -69,13 +69,18 @@ const clear = `var t = document.querySelectorAll('textarea')[0];
 const count = await ev(`document.querySelectorAll('textarea').length`);
 check('A1: answer fields present', count >= 10, 'textareas=' + count);
 
-/* ---- A2: empty box sits at its --min-h floor ---- */
+/* ---- A2: empty box sits at its --min-h floor ----
+   Suites run against a shared live deployment, so the room may hold a
+   saved answer from a previous run. Clear the field first (exactly as
+   A4 does) so the floor measurement is independent of room state. */
+await ev(clear);
+await sleep(300);
 const emptyBox = JSON.parse(await ev(`JSON.stringify((function(){
   var t = document.querySelectorAll('textarea')[0];
   var min = parseFloat(getComputedStyle(t).getPropertyValue('--min-h')) || 70;
   return { min: min, h: t.offsetHeight };
 })())`));
-check('A2: empty box sits at the --min-h floor',
+check('A2: cleared box sits at the --min-h floor',
   emptyBox.h >= emptyBox.min - 2 && emptyBox.h <= emptyBox.min + 8,
   'h=' + emptyBox.h + ' min=' + emptyBox.min);
 
@@ -100,14 +105,17 @@ check('A4: clearing restores the --min-h floor',
 /* ---- A5: narrowed viewport re-grows via the debounced resize path ---- */
 await ev(type);
 await sleep(300);
-await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 2, mobile: true });
-await sleep(900); /* debounce is 120ms; give layout plenty */
-const narrow = JSON.parse(await ev(`JSON.stringify((function(){
-  var t = document.querySelectorAll('textarea')[0];
-  return { h: t.offsetHeight, scroll: t.scrollHeight };
-})())`));
-check('A5: narrow viewport keeps the answer unclipped', narrow.h >= narrow.scroll - 1, 'h=' + narrow.h + ' scroll=' + narrow.scroll);
-await send('Emulation.clearDeviceMetricsOverride');
+try {
+  await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 2, mobile: true });
+  await sleep(900); /* debounce is 120ms; give layout plenty */
+  const narrow = JSON.parse(await ev(`JSON.stringify((function(){
+    var t = document.querySelectorAll('textarea')[0];
+    return { h: t.offsetHeight, scroll: t.scrollHeight };
+  })())`));
+  check('A5: narrow viewport keeps the answer unclipped', narrow.h >= narrow.scroll - 1, 'h=' + narrow.h + ' scroll=' + narrow.scroll);
+} finally {
+  await send('Emulation.clearDeviceMetricsOverride');
+}
 
 check('A6: no page exceptions', exceptions.length === 0, exceptions.slice(0, 2).join(' | '));
 
