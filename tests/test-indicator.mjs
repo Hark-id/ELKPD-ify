@@ -14,11 +14,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function open({ mobile = false, port = 9470 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-ind-'));
   const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--no-first-run', mobile ? '--window-size=390,844' : '--window-size=1280,900', 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let target = null;
-  for (let i = 0; i < 50; i++) {
-    await sleep(200);
-    try { const l = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); target = l.find(t => t.type === 'page'); if (target) break; } catch { }
-  }
+  const target = await waitForCDP(port);
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   let mid = 0; const h = new Map(); const dialogs = []; const exceptions = [];
