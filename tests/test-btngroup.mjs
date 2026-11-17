@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { findChrome } from './helpers.mjs';
+import { findChrome, waitForCDP } from './helpers.mjs';
 
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
