@@ -27,6 +27,8 @@ const MAP = [
   ['src/worksheet/wave.js', 'build/gate/public/wave.js'],
   ['src/rooms/rooms.js', 'build/rooms/rooms.js'],
   ['src/rooms/wrangler.toml', 'build/rooms/wrangler.toml'],
+  ['src/webhook/webhook.js', 'build/webhook/webhook.js'],
+  ['src/webhook/wrangler.toml', 'build/webhook/wrangler.toml'],
 ];
 
 let drift = 0;

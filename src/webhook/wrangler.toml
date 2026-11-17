@@ -1,0 +1,14 @@
+name = "elkpd-webhook"
+main = "webhook.js"
+compatibility_date = "2025-11-01"
+
+# Event ring buffer + delivery-id dedupe. KV is enough for a handful of
+# events per day; move to a Durable Object if volume ever justifies it.
+[[kv_namespaces]]
+binding = "EVENTS"
+id = "f83f5f2a3fb84f339057aa870bb4c842"
+
+# Secrets (set with `wrangler secret put`, never committed):
+#   GITHUB_WEBHOOK_SECRET  must match the GitHub webhook config
+#   READ_TOKEN             bearer token for GET /recent
+#   NOTIFY_URL             optional push target (Discord/ntfy/Slack style)
