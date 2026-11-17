@@ -1,5 +1,9 @@
 name = "lkpd-cerpen-gate"
-pages_build_output_dir = "public"
+# The deployable layout is assembled by scripts/sync.mjs from src/, so the
+# output directory is build/gate/public — NOT public/. A Git-connected
+# Pages build must use the same path (Build output directory in the
+# dashboard), or it will deploy an empty folder.
+pages_build_output_dir = "build/gate/public"
 compatibility_date = "2025-11-01"
 
 [[durable_objects.bindings]]
