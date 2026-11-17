@@ -23,11 +23,11 @@ jobs:
     name: Static checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Assemble the deployable layout
         run: node scripts/sync.mjs
@@ -85,11 +85,11 @@ jobs:
       ELKPD_URL: ${{ vars.ELKPD_URL }}
       ELKPD_ADMIN_CODE: ${{ secrets.ELKPD_ADMIN_CODE }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
