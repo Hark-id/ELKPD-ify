@@ -1,0 +1,13 @@
+name = "lkpd-cerpen-gate"
+pages_build_output_dir = "public"
+compatibility_date = "2025-11-01"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "WorksheetRoom"
+script_name = "lkpd-cerpen-rooms"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RoomRegistry"
+script_name = "lkpd-cerpen-rooms"

@@ -1,0 +1,118 @@
+Motion – Material Design 3
+Skip to main content menu_open
+arrow_backMain menu
+pause  Pause animations
+light_mode  Switch to light mode
+menu
+material_designMaterial Design 3search
+Motion physics system
+The motion physics system makes a UI expressive and easy to use
+How it worksSpecs
+On this page
+Cross-platform experiences
+Tokens and specs
+Web: Convert springs to curves
+Easing and duration
+link
+Copy linkLink copied
+Cross-platform experiences
+The motion physics system is available on Jetpack Compose and Android Views (MDC-Android), and can be easily adapted to other platforms.
+link
+Copy linkLink copied
+Platform
+| Status
+| How to apply
+|
+Jetpack Compose
+| Available
+| Use built-in components and spring tokens.
+|
+Android Views (MDC-Android)
+| Available. Not  added to components.
+| Use built-in spring tokens.
+|
+Web
+| Compatible
+| Use springs when possible, otherwise use curves that mimic the springs for animations without interruptions or gestures. View web conversion table
+|
+link
+Copy linkLink copied
+Tokens and specs
+The spring composite tokens are used in the motion physics system. These composites combine two spring tokens (damping and stiffness) into a single token for ease of use. The easing, duration, and path tokens are used by the legacy system, so can be ignored.
+link
+Copy linkLink copied
+Motion arrow_drop_down
+search
+expand_all
+Standard, Android arrow_drop_down
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+folderSpring
+keyboard_arrow_down
+folderEasing
+keyboard_arrow_down
+folderDuration
+keyboard_arrow_down
+folderStyle
+keyboard_arrow_down
+Close
+link
+Copy linkLink copied
+Web: Convert springs to curves
+link
+Copy linkLink copied
+Spring | Curve |
+Expressive fast spatial | 0.42, 1.67, 0.21, 0.90. Duration =  350ms |
+Expressive default spatial | 0.38, 1.21, 0.22, 1.00. Duration =  500ms |
+Expressive slow spatial | 0.39, 1.29, 0.35, 0.98. Duration =  650ms |
+Expressive fast effects | 0.31, 0.94, 0.34, 1.00. Duration =  150ms |
+Expressive default effects | 0.34, 0.80, 0.34, 1.00. Duration =  200ms |
+Expressive slow effects | 0.34, 0.88, 0.34, 1.00. Duration =  300ms |
+Standard fast spatial | 0.27, 1.06, 0.18, 1.00. Duration =  350ms |
+Standard default spatial | 0.27, 1.06, 0.18, 1.00. Duration =  500ms |
+Standard slow spatial | 0.27, 1.06, 0.18, 1.00. Duration =  750ms |
+Standard fast effects | 0.31, 0.94, 0.34, 1.00. Duration =  150ms |
+Standard default effects | 0.34, 0.80, 0.34, 1.00. Duration =  200ms |
+Standard slow effects | 0.34, 0.88, 0.34, 1.00. Duration =  300ms |
+link
+Copy linkLink copied
+Easing and duration
+The original easing and duration tokens are still available to use as a fallback, and are currently used for animating transitions. View easing and duration system
+arrow_left_alt PreviousMotion physics system: How it works
+Up next arrow_right_altEasing and duration: Applying easing and duration
+vertical_align_top
+material_designMaterial Design is an adaptable system of guidelines, components, and tools that support the best practices of user interface design. Backed by open-source code, Material Design streamlines collaboration between designers and developers, and helps teams quickly build beautiful products.
+Social
+GitHub
+X
+YouTube
+Blog RSS
+Libraries
+Android
+Compose
+Flutter
+Web
+More Google sites
+Google Design
+Archived versions
+Material Design 1
+Material Design 2
+Privacy Policy
+Terms of Service
+Join research studies
+Feedback
+This website requires JavaScript.
+Standard, Android
+Custom composite with 2 properties
+Motion
+Expand all

@@ -1,0 +1,94 @@
+Button groups
+Skip to main content menu_open
+arrow_backMain menu
+pause  Pause animations
+light_mode  Switch to light mode
+menu
+material_designMaterial Design 3search
+Button groups
+Button groups organize buttons and add interactions between them
+Resourcesandroidandroid
+infoOverviewstyleSpecsdesign_servicesGuidelinesaccessibility_newAccessibility
+On this page
+Availability & resources
+M3 Expressive update
+link
+Copy linkLink copied
+Two variants: standard and connected
+Applies shape morph when pressed and selected
+Connected button groups replace the
+segmented button
+Segmented buttons help people select options, switch views, or sort elements. Note: They're deprecated in the expressive update. Use a nav rail instead.
+More on segmented buttons
+Works with all button sizes: XS, S, M, L, and XL
+Support for single-select, multi-select, and selection-required
+link
+Copy linkLink copied
+Button groups can contain buttons and icon buttons
+link
+Copy linkLink copied
+Availability & resources
+link
+Copy linkLink copied
+Type | Resource | Status |
+Design  |
+Design Kit (Figma) | Available |
+Implementation  |
+android Jetpack Compose: Expressive | Available |
+android Android Views (MDC-Android): Expressive | Available |
+language Web: Expressive
+| Unavailable |
+Close
+link
+Copy linkLink copied
+M3 Expressive update
+link
+Copy linkLink copied
+Button groups apply shape, motion, and width changes to
+buttons
+Buttons let people take action and make choices with one tap.
+More on buttons
+and
+icon buttons
+Icon buttons help people take minor actions with one tap.
+More on icon buttons
+to make them more interactive. More on M3 Expressive
+link
+Copy linkLink copied
+May 2025
+New component added to catalog.Variants and naming:
+Added standard button group
+Added connected button group
+Use instead of
+segmented button
+Segmented buttons help people select options, switch views, or sort elements. Note: They're deprecated in the expressive update. Use a nav rail instead.
+More on segmented buttons
+, which is no longer recommended
+Configurations:
+Works with all button sizes: XS, S, M, L, and XL
+Applies default shape to all buttons: round or square
+Button groups are containers that hold buttons of many shapes and sizes
+arrow_left_alt PreviousAll buttons
+Up next arrow_right_altButton groups: Specs
+vertical_align_top
+material_designMaterial Design is an adaptable system of guidelines, components, and tools that support the best practices of user interface design. Backed by open-source code, Material Design streamlines collaboration between designers and developers, and helps teams quickly build beautiful products.
+Social
+GitHub
+X
+YouTube
+Blog RSS
+Libraries
+Android
+Compose
+Flutter
+Web
+More Google sites
+Google Design
+Archived versions
+Material Design 1
+Material Design 2
+Privacy Policy
+Terms of Service
+Join research studies
+Feedback
+This website requires JavaScript.

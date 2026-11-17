@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Motion Lab — LKPD gate (M3 Expressive)</title>
+<style>
+  /* ============================================================
+     MOTION LAB — playground for the gate card's M3 Expressive motion.
+     Same pastel-crimson look as the deployed gate, so previews match.
+     ============================================================ */
+
+  /* ---- official M3 easing tokens (effects / non-physical motion) ---- */
+  :root{
+    --ease-emphasized:        cubic-bezier(.2,0,0,1);
+    --ease-emphasized-decel:  cubic-bezier(.05,.7,.1,1);
+    --ease-emphasized-accel:  cubic-bezier(.3,0,.8,.15);
+    /* M3 duration ranges: short 50-200 · medium 250-400 · long 450-600 · x-long 700-1000 */
+    --dur-short: 150ms;
+    --dur-med:   300ms;
+    --dur-long:  500ms;
+    --dur-xl:    700ms;
+
+    /* pastel-crimson palette (same as the deployed gate) */
+    --field-hi: #A00D2C;
+    --field-lo: #5C071D;
+    --card-hi:  #2E0D18;
+    --card-lo:  #1D0710;
+    --hi-1: #F7D6DB;
+    --hi-2: #FBE2E5;
+    --hi-3: #F4C9D1;
+    --ink:      #FBEAEC;
+    --ink-mute: #D9AFB8;
+    --ink-dim:  #C9A3AD;
+    --ink-err:  #F8C0C6;
+    --md-ease: var(--ease-emphasized);
+    --md-spring: cubic-bezier(.34,1.4,.64,1);
+    --md-corner-xl: 28px;
+    --md-corner-l: 20px;
+  }
+  *{box-sizing:border-box}
+  html,body{min-height:100%}
+  body{
+    margin:0;
+    font-family:"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(85% 65% at 10% -8%, rgba(224,19,69,.42) 0%, rgba(224,19,69,0) 62%),
+      radial-gradient(75% 60% at 96% 104%, rgba(255,95,125,.24) 0%, rgba(255,95,125,0) 58%),
+      radial-gradient(55% 45% at 82% 8%, rgba(255,140,160,.16) 0%, rgba(255,140,160,0) 60%),
+      linear-gradient(162deg, #A00D2C 0%, #820A26 46%, #5C071D 100%);
+    background-attachment:fixed;
+  }
+  ::selection{background:var(--hi-1);color:var(--card-lo)}
+  body::after{
+    content:"";
+    position:fixed;inset:0;z-index:60;pointer-events:none;
+    opacity:.16;mix-blend-mode:soft-light;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .wrap{max-width:520px;margin:0 auto;padding:clamp(20px,5vw,44px) clamp(16px,4vw,32px) 80px}
+
+  .eyebrow{margin:0 0 6px;font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-mute)}
+  h1{margin:0 0 8px;font-size:clamp(26px,6vw,32px);line-height:1.12;font-weight:800;color:var(--ink)}
+  .sub{margin:0 0 26px;font-size:13.5px;line-height:1.55;color:var(--ink-mute)}
+  .rule{height:3px;width:44px;border-radius:999px;background:var(--hi-3);margin:0 0 26px}
+
+  /* ---- the stage: a replica of the gate card ---- */
+  .card{
+    position:relative;overflow:hidden;
+    width:100%;
+    border-radius:var(--md-corner-xl);
+    padding:clamp(24px,5vw,36px);
+    background:linear-gradient(178deg, var(--card-hi) 0%, var(--card-lo) 100%);
+    border:1px solid rgba(255,255,255,.06);
+    box-shadow:0 34px 80px -34px rgba(0,0,0,.75), 0 12px 30px -14px rgba(0,0,0,.55);
+    will-change:transform,opacity;
+  }
+  .card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(120% 55% at 50% -12%, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 62%);
+    pointer-events:none;
+  }
+  .card::after{
+    content:"";position:absolute;inset:0;opacity:.18;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+    pointer-events:none;
+  }
+  .card > *{position:relative;z-index:1}
+
+  .eyebrow-sm{margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-mute)}
+  .card h2{margin:0 0 8px;font-size:24px;line-height:1.15;font-weight:800;color:var(--ink)}
+  .card .sub{margin:0 0 18px;font-size:12.5px}
+  .rule-sm{height:3px;width:40px;border-radius:999px;background:var(--hi-3);margin:0 0 18px}
+
+  /* segmented control with a travelling liquid indicator */
+  .tabs{
+    position:relative;
+    display:flex;gap:4px;padding:4px;margin:0 0 20px;
+    background:rgba(0,0,0,.24);
+    border-radius:999px;
+  }
+  .indicator{
+    position:absolute;top:4px;bottom:4px;left:0;width:80px;
+    background:var(--hi-1);
+    border-radius:999px;
+    will-change:transform,width;
+  }
+  .tab{
+    position:relative;z-index:1;
+    flex:1;
+    font-family:inherit;font-size:12.5px;font-weight:700;
+    color:var(--ink-mute);
+    background:transparent;border:0;border-radius:999px;
+    padding:11px 8px;cursor:pointer;
+    transition:color var(--dur-short) var(--ease-emphasized);
+  }
+  .tab:hover{color:var(--ink)}
+  .tab[aria-selected="true"]{color:var(--card-lo)}
+  .tab:focus-visible{outline:3px solid rgba(247,214,219,.85);outline-offset:2px}
+  .panes{position:relative}
+  .pane[hidden]{display:none}
+
+  .tfield{
+    position:relative;
+    background:rgba(255,255,255,.07);
+    border-radius:16px;
+    transition:background .15s var(--ease-emphasized);
+  }
+  .tfield:hover{background:rgba(255,255,255,.11)}
+  .tfield input{
+    width:100%;
+    padding:24px 16px 10px;
+    font-family:inherit;font-size:15px;color:var(--ink);
+    background:transparent;border:0;outline:none;
+  }
+  .tfield label{
+    position:absolute;left:16px;top:17px;
+    font-size:14.5px;color:var(--ink-dim);
+    pointer-events:none;
+    transition:all .18s var(--ease-emphasized);
+  }
+  .tfield input:focus + label,
+  .tfield input:not(:placeholder-shown) + label{
+    top:7px;
+    font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--hi-3);
+  }
+  .tfield::after{
+    content:"";position:absolute;left:14px;right:14px;bottom:0;height:2px;
+    border-radius:2px 2px 0 0;background:transparent;
+    transition:background .18s var(--ease-emphasized);
+  }
+  .tfield:focus-within::after{background:var(--hi-3)}
+  #code{letter-spacing:.22em;text-transform:uppercase;font-weight:700}
+  .support{margin:8px 2px 0;font-size:11.5px;color:var(--ink-mute)}
+
+  .btn{
+    position:relative;
+    width:100%;
+    margin-top:18px;
+    font-family:inherit;font-size:14px;font-weight:700;
+    color:var(--card-lo);
+    background:var(--hi-1);
+    border:0;border-radius:999px;
+    padding:16px 22px;cursor:pointer;
+    will-change:transform;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation;
+  }
+  .btn:hover{background:var(--hi-2)}
+  .btn:focus-visible{outline:3px solid rgba(255,255,255,.8);outline-offset:3px}
+  /* burst ring on release */
+  .burst{
+    position:absolute;inset:0;border-radius:999px;
+    border:2px solid var(--hi-3);
+    opacity:0;pointer-events:none;
+  }
+  .burst.go{animation:burst 500ms var(--ease-emphasized-decel)}
+  @keyframes burst{
+    0%{opacity:.45;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.18)}
+  }
+
+  /* ---- lab panels ---- */
+  .panel{
+    margin-top:26px;
+    background:rgba(0,0,0,.22);
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:var(--md-corner-l);
+    padding:18px;
+  }
+  .panel h3{
+    margin:0 0 4px;
+    font-size:13px;font-weight:700;color:var(--hi-3);
+  }
+  .panel .note{margin:0 0 12px;font-size:11.5px;line-height:1.6;color:var(--ink-mute)}
+  .panel .note b{color:var(--ink);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font-family:inherit;font-size:11.5px;font-weight:600;
+    color:var(--ink);
+    background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.14);
+    border-radius:999px;
+    padding:8px 14px;cursor:pointer;
+    transition:background .15s var(--ease-emphasized),transform .15s var(--ease-emphasized);
+  }
+  .chip:hover{background:rgba(255,255,255,.16)}
+  .chip:active{transform:scale(.96)}
+  .chip.active{background:var(--hi-1);color:var(--card-lo);border-color:var(--hi-1)}
+  .chip:focus-visible{outline:3px solid rgba(247,214,219,.85);outline-offset:2px}
+  .credit{margin-top:34px;font-size:10.5px;line-height:1.6;color:rgba(217,175,184,.75)}
+  .credit a{color:var(--hi-3);text-decoration:none}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Motion Lab &middot; M3 Expressive</p>
+  <h1>Gerak untuk halaman masuk</h1>
+  <p class="sub">Mainkan ketiga bagian gerak halaman gate. Semua opsi memakai sistem fisika M3 Expressive: spring <b>spatial</b> (posisi/ukuran, boleh overshoot) dan easing <b>emphasized</b> untuk <b>effects</b>.</p>
+  <div class="rule"></div>
+
+  <!-- ============ STAGE: replica of the gate card ============ -->
+  <div class="card" id="card">
+    <p class="eyebrow-sm">SMA Negeri 3 Yogyakarta &middot; Bahasa Indonesia</p>
+    <h2>LKPD Teks Cerpen</h2>
+    <p class="sub">Lembar kerja bersama &mdash; satu kode per grup.</p>
+    <div class="rule-sm"></div>
+
+    <div class="tabs" id="tabs">
+      <span class="indicator" id="indicator" aria-hidden="true"></span>
+      <button class="tab" role="tab" id="tab-join" aria-selected="true" aria-controls="pane-join">Masuk</button>
+      <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Buat Grup Baru</button>
+    </div>
+
+    <div class="panes" id="panes">
+      <div class="pane" id="pane-join" role="tabpanel" aria-labelledby="tab-join">
+        <div class="tfield">
+          <input id="code" type="text" placeholder=" " autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <label for="code">Kode Grup</label>
+        </div>
+        <p class="support">Kode diberikan oleh ketua kelompok Anda.</p>
+        <button class="btn" id="cta" type="button">Buka Lembar Kerja</button>
+        <span class="burst" id="burst" aria-hidden="true"></span>
+      </div>
+      <div class="pane" id="pane-new" role="tabpanel" aria-labelledby="tab-new" hidden>
+        <div class="tfield">
+          <input id="label" type="text" placeholder=" " autocomplete="off" maxlength="60">
+          <label for="label">Nama Kelompok (opsional)</label>
+        </div>
+        <p class="support">Kode dibuat otomatis &mdash; simpan setelah dibuat.</p>
+        <button class="btn" id="cta2" type="button">Buat Kode Grup</button>
+        <span class="burst" id="burst2" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 1 · CARD ENTRANCE ============ -->
+  <section class="panel">
+    <h3>1 &middot; Gerak masuk kartu</h3>
+    <p class="note">Klik untuk memainkan masuk kartu. Opsi <b>spring</b> memakai kurva <code>linear()</code> yang dihasilkan dari pasangan damping/stiffness (spatial: boleh overshoot); opsi <b>fade</b> memakai token <b>emphasized-decelerate</b> resmi.</p>
+    <div class="chips" id="entranceChips"></div>
+  </section>
+
+  <!-- ============ 2 · LIQUID TABS ============ -->
+  <section class="panel">
+    <h3>2 &middot; Pergantian tab &ldquo;cair&rdquo;</h3>
+    <p class="note">Indikator terpilih meluncur dengan <b>spatial spring</b> dan meregang/mengempis mengikuti kecepatan (efek cair), lalu pane konten bertukar dengan pola <b>shared-axis Y</b> (keluar: <b>emphasized-accelerate</b>, masuk: <b>emphasized-decelerate</b>).</p>
+    <div class="chips">
+      <button class="chip" id="replayTabs" type="button">Pindah tab sekarang</button>
+    </div>
+  </section>
+
+  <!-- ============ 3 · BUTTON POP ============ -->
+  <section class="panel">
+    <h3>3 &middot; Pop tombol besar</h3>
+    <p class="note">Tekan tombol di kartu: <b>squish</b> saat ditekan, lalu <b>pop spring</b> dengan overshoot saat dilepas + cincin burst. Atau mainkan dari sini.</p>
+    <div class="chips">
+      <button class="chip" id="replayPop" type="button">Mainkan pop</button>
+    </div>
+  </section>
+
+  <p class="credit">Token mengikuti spesifikasi resmi &mdash; spring spatial/effects dalam tiga kecepatan (default/fast/slow) di <a href="https://m3.material.io/styles/motion/overview/how-it-works" target="_blank" rel="noopener">m3.material.io/styles/motion</a>, easing emphasized dan rentang durasi di <a href="https://m3.material.io/styles/motion/easing-and-duration/tokens-specs" target="_blank" rel="noopener">easing-and-duration/tokens-specs</a>. Nilai damping/stiffness di lab ini adalah penyetelan perkiraan untuk web.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var RM = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ============================================================
+     Spring solver (M3 Expressive physics: damping ratio + stiffness)
+     ============================================================ */
+
+  /* Closed-form underdamped spring — exact, no numerical damping.
+     Used to bake linear() curves for CSS/WAAPI entrances. */
+  function springLinear(zeta, k, dur) {
+    if (RM) return "linear(0, 1)";
+    var w0 = Math.sqrt(k), wd = w0 * Math.sqrt(1 - zeta * zeta);
+    var fps = 60, n = Math.round(dur * fps), out = ["0"];
+    for (var i = 1; i <= n; i++) {
+      var t = i / fps;
+      var x = 1 - Math.exp(-zeta * w0 * t) *
+              (Math.cos(wd * t) + (zeta * w0 / wd) * Math.sin(wd * t));
+      out.push(x.toFixed(4) + " " + ((i / fps) * 100).toFixed(2) + "%");
+    }
+    return "linear(" + out.join(", ") + ")";
+  }
+
+  /* Live spring state (indicator, button) — re-targetable mid-flight.
+     Semi-implicit Euler sub-stepped 4x so damping stays honest. */
+  function makeSpring(zeta, k, x, target) {
+    return { zeta: zeta, k: k, x: x, v: 0, target: target };
+  }
+  function stepSpring(s, dt) {
+    var subs = 4, h = dt / subs;
+    var c = 2 * Math.sqrt(s.k) * s.zeta;
+    for (var i = 0; i < subs; i++) {
+      var a = -s.k * (s.x - s.target) - c * s.v;
+      s.v += a * h;
+      s.x += s.v * h;
+    }
+    return s.x;
+  }
+  var settled = function (s) { return Math.abs(s.v) < 0.001 && Math.abs(s.x - s.target) < 0.001; };
+
+  /* M3 Expressive spatial spring presets (three speeds, tuned for web).
+     spatial = position/size, may overshoot; effects use easing tokens.
+     zeta 0.78 -> ~2.5% overshoot (gentle), 0.62 -> ~8% (bouncy). */
+  var SPRINGS = {
+    spatial:       { zeta: 0.78, k: 300 },  /* default speed */
+    spatialFast:   { zeta: 0.92, k: 520 },  /* fast — snappy, no overshoot */
+    spatialBouncy: { zeta: 0.62, k: 180 },  /* slow — expressive bounce */
+  };
+  var springEase = {
+    spatial:       springLinear(SPRINGS.spatial.zeta,       SPRINGS.spatial.k,       0.8),
+    spatialFast:   springLinear(SPRINGS.spatialFast.zeta,   SPRINGS.spatialFast.k,   0.55),
+    spatialBouncy: springLinear(SPRINGS.spatialBouncy.zeta, SPRINGS.spatialBouncy.k, 1.1),
+  };
+
+  /* ============================================================
+     1 · CARD ENTRANCE — options
+     ============================================================ */
+  var card = document.getElementById("card");
+  var ENTRANCES = [
+    { id: "rise",   label: "Rise + Fade",     note: "emphasized-decelerate · 600ms",
+      frames: [{ opacity: 0, transform: "translateY(48px)" }, { opacity: 1, transform: "translateY(0)" }],
+      duration: 600, easing: "cubic-bezier(.05,.7,.1,1)" },
+    { id: "drop",   label: "Spring drop",     note: "spatial fast spring · overshoot",
+      frames: [{ opacity: 0, transform: "translateY(-56px)" }, { opacity: 1, transform: "translateY(0)" }],
+      duration: 700, easing: springEase.spatialFast },
+    { id: "grow",   label: "Container grow",  note: "spatial default spring",
+      frames: [{ opacity: 0, transform: "scale(.92) translateY(14px)" }, { opacity: 1, transform: "scale(1) translateY(0)" }],
+      duration: 750, easing: springEase.spatial },
+    { id: "settle", label: "Settle bounce",   note: "spatial slow (bouncy) — expressive",
+      frames: [{ opacity: 0, transform: "translateY(72px)" }, { opacity: 1, transform: "translateY(0)" }],
+      duration: 1000, easing: springEase.spatialBouncy },
+    { id: "unfold", label: "Unfold",          note: "clip reveal · emphasized · 700ms",
+      frames: [{ clipPath: "inset(0 0 100% 0)", opacity: .3, transform: "translateY(18px)" },
+               { clipPath: "inset(0 0 -6% 0)", opacity: 1, transform: "translateY(0)" }],
+      duration: 700, easing: "cubic-bezier(.2,0,0,1)" },
+  ];
+  var activeEntrance = "rise";
+
+  function playEntrance(id) {
+    var opt = ENTRANCES.find(function (o) { return o.id === id; });
+    if (!opt) return;
+    activeEntrance = id;
+    document.querySelectorAll("#entranceChips .chip").forEach(function (c) {
+      c.classList.toggle("active", c.dataset.id === id);
+    });
+    if (RM) return; /* final state is already resting */
+    card.animate(opt.frames, { duration: opt.duration, easing: opt.easing, fill: "both" });
+  }
+
+  var chipHost = document.getElementById("entranceChips");
+  ENTRANCES.forEach(function (o, i) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (i === 0 ? " active" : "");
+    b.dataset.id = o.id;
+    b.textContent = o.label;
+    b.title = o.note;
+    b.addEventListener("click", function () { playEntrance(o.id); });
+    chipHost.appendChild(b);
+  });
+
+  /* ============================================================
+     2 · LIQUID TAB SWITCH
+     ============================================================ */
+  var tabs = document.getElementById("tabs");
+  var indicator = document.getElementById("indicator");
+  var tabJoin = document.getElementById("tab-join");
+  var tabNew = document.getElementById("tab-new");
+  var paneJoin = document.getElementById("pane-join");
+  var paneNew = document.getElementById("pane-new");
+  var onJoin = true;
+
+  var indX = makeSpring(0.80, 280, 0, 0);
+  var indW = makeSpring(0.80, 280, 80, 80);
+
+  function metrics(tab) {
+    var r = tab.getBoundingClientRect(), tr = tabs.getBoundingClientRect();
+    return { left: r.left - tr.left, width: r.width };
+  }
+  function selectTab(newTab, oldTab) {
+    newTab.setAttribute("aria-selected", "true");
+    oldTab.setAttribute("aria-selected", "false");
+    var m = metrics(newTab);
+    indX.target = m.left;
+    indW.target = m.width;
+    if (RM) { applyIndicator(); }
+
+    /* shared-axis Y pane swap (effects: easings, no overshoot) */
+    var out = oldTab === tabJoin ? paneJoin : paneNew;
+    var inn = oldTab === tabJoin ? paneNew : paneJoin;
+    if (RM) {
+      out.hidden = true;
+      inn.hidden = false;
+      return;
+    }
+    if (out.animate) {
+      out.animate(
+        [{ opacity: 1, transform: "translateY(0)" }, { opacity: 0, transform: "translateY(-12px)" }],
+        { duration: 150, easing: "cubic-bezier(.3,0,.8,.15)", fill: "forwards" }
+      ).onfinish = function () {
+        out.hidden = true;
+        inn.hidden = false;
+        if (inn.animate) {
+          inn.animate(
+            [{ opacity: 0, transform: "translateY(14px)" }, { opacity: 1, transform: "translateY(0)" }],
+            { duration: 280, easing: "cubic-bezier(.05,.7,.1,1)", fill: "forwards" }
+          );
+        }
+      };
+    } else {
+      out.hidden = true; inn.hidden = false;
+    }
+  }
+  function applyIndicator() {
+    var stretch = Math.max(-0.22, Math.min(0.22, Math.abs(indX.v) * 0.0011));
+    indicator.style.width = indW.x + "px";
+    indicator.style.transform =
+      "translateX(" + indX.x + "px)" +
+      " scaleX(" + (1 + stretch) + ")" +
+      " scaleY(" + (1 - Math.abs(stretch) * 0.45) + ")";
+  }
+
+  function toggleTabs() {
+    if (onJoin) selectTab(tabNew, tabJoin); else selectTab(tabJoin, tabNew);
+    onJoin = !onJoin;
+  }
+  tabJoin.addEventListener("click", function () { if (!onJoin) toggleTabs(); });
+  tabNew.addEventListener("click", function () { if (onJoin) toggleTabs(); });
+  document.getElementById("replayTabs").addEventListener("click", toggleTabs);
+
+  /* ============================================================
+     3 · BUTTON POP (squish + spring overshoot + burst ring)
+     Choreography: press squishes to 0.94; release launches the spring
+     PAST rest (target 1.05, bouncy) so the overshoot is visible, then
+     a near-critical spring settles it back to 1.
+     ============================================================ */
+  var btn = document.getElementById("cta");
+  var burstEl = document.getElementById("burst");
+  var popScale = makeSpring(0.95, 700, 1, 1);   /* press: near-critical */
+  var popSettle = false;                        /* true = settling back to 1 */
+  var popRelease = null;
+
+  function squash() {
+    if (RM) return;
+    popSettle = false;
+    popRelease = null;
+    popScale.target = 0.94;
+  }
+  function pop() {
+    if (RM) return;
+    /* phase 1: overshoot — target beyond rest so the pop is visible */
+    popSettle = false;
+    popRelease = makeSpring(0.55, 300, popScale.x, 1.05);
+    if (!RM) {
+      burstEl.classList.remove("go");
+      void burstEl.offsetWidth;
+      burstEl.classList.add("go");
+    }
+  }
+  btn.addEventListener("pointerdown", squash);
+  btn.addEventListener("pointerup", pop);
+  btn.addEventListener("pointerleave", function () { if (!popRelease) popScale.target = 1; });
+  document.getElementById("replayPop").addEventListener("click", function () { pop(); });
+
+  /* ============================================================
+     single rAF loop driving all springs
+     ============================================================ */
+  function frame(now) {
+    var dt = Math.min(1 / 30, (now - (frame.last || now)) / 1000 || 1 / 60);
+    frame.last = now;
+
+    if (!RM) {
+      var moving = false;
+      [indX, indW].forEach(function (s) {
+        stepSpring(s, dt);
+        if (!settled(s)) moving = true;
+      });
+      applyIndicator();
+
+      /* button scale: press spring or release spring takes over */
+      var active = popRelease || popScale;
+      stepSpring(active, dt);
+      if (!settled(active) || active.target !== 1 || popScale.x !== 1) moving = true;
+      /* phase 2: once the overshoot lands, settle back to 1 */
+      if (popRelease && settled(popRelease)) {
+        popScale.x = popRelease.x;   /* carry the position over */
+        popScale.target = 1;
+        popRelease = null;
+      }
+      btn.style.transform = "scale(" + popScale.x.toFixed(4) + ")";
+      var btn2 = document.getElementById("cta2");
+      if (btn2) btn2.style.transform = btn.style.transform;
+
+      requestAnimationFrame(frame);
+      return;
+    }
+    applyIndicator();
+  }
+  requestAnimationFrame(frame);
+
+  /* keep the indicator honest across resizes */
+  window.addEventListener("resize", function () {
+    var m = metrics(onJoin ? tabJoin : tabNew);
+    indX.x = indX.target = m.left;
+    indW.x = indW.target = m.width;
+    applyIndicator();
+  });
+
+  /* initial indicator placement */
+  var m0 = metrics(tabJoin);
+  indX.x = indX.target = m0.left;
+  indW.x = indW.target = m0.width;
+  applyIndicator();
+
+  /* play the default entrance once on load */
+  window.addEventListener("load", function () { playEntrance(activeEntrance); });
+})();
+</script>
+</body>
+</html>

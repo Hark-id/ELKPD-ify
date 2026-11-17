@@ -1,0 +1,11 @@
+# Local development secrets.
+# Copy to `.dev.vars` and edit. NEVER commit `.dev.vars` itself.
+
+# Signs session cookies. Any 32+ random bytes.
+SESSION_SECRET = "local-dev-secret-not-for-production"
+
+# Optional: a fixed legacy room code. Leave unset for pure self-service.
+# GROUP_CODE = "KELOMPOK-3-XXXXXX"
+
+# Optional: the admin console code (ADMIN + 6 keyboard-row symbols).
+# ADMIN_CODE = "ADMIN!@#$%^"

@@ -1,0 +1,180 @@
+Easing and duration – Material Design 3
+Skip to main content menu_open
+arrow_backMain menu
+pause  Pause animations
+light_mode  Switch to light mode
+menu
+material_designMaterial Design 3search
+Easing and duration
+Easing and duration create responsive and expressive motion
+Applying easing and durationTokens & specs
+On this page
+Tokens
+Easing
+Duration
+link
+Copy linkLink copied
+star
+Note:
+In the expressive update, components and motion now use the motion physics system, which uses springs. Products should migrate to the new system. The easing and duration system is still used for transitions and can be used by teams that haven't yet updated to GM3 Expressive, but is no longer maintained.
+link
+Copy linkLink copied
+Tokens
+link
+Copy linkLink copied
+Motion easing and duration can be implemented using easing and duration tokens. Learn more about design tokens
+link
+Copy linkLink copied
+Motion arrow_drop_down
+search
+expand_all
+Standard, Android arrow_drop_down
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+grid_3x3
+Custom composite with 2 properties
+folderSpring
+keyboard_arrow_down
+folderEasing
+keyboard_arrow_down
+folderDuration
+keyboard_arrow_down
+folderStyle
+keyboard_arrow_down
+Close
+link
+Copy linkLink copied
+Easing
+link
+Copy linkLink copied
+Emphasized easing set
+This set is the most common because it captures the expressive style of M3.
+link
+Copy linkLink copied
+pause
+Emphasized
+pause
+Emphasized decelerate
+pause
+Emphasized accelerate
+link
+Copy linkLink copied
+Info/Platform | Emphasized | Emphasized decelerate | Emphasized accelerate |
+Token | md.sys.motion.easing.emphasized | md.sys.motion.easing.emphasized.decelerate | md.sys.motion.easing.emphasized.accelerate |
+Android | pathInterpolator(M 0,0 C 0.05, 0, 0.133333, 0.06, 0.166666, 0.4 C 0.208333, 0.82, 0.25, 1, 1, 1) | PathInterpolator(0.05f, 0.7f, 0.1f, 1f) | PathInterpolator(0.3f, 0f, 0.8f, 0.15f) |
+CSS | N/A (Use Standard as a fallback) | cubic-bezier(0.05, 0.7, 0.1, 1.0) | cubic-bezier(0.3, 0.0, 0.8, 0.15) |
+Flutter | easeInOutCubicEmphasized | Cubic(0.05, 0.7, 0.1, 1.0); | Cubic(0.3, 0.0, 0.8, 0.15); |
+iOS | N/A (Use Standard as a fallback) | ControlPoints:0.05f:0.7f:0.1f:1.0f]; | ControlPoints:0.3f:0.0f:0.8f:0.15f]; |
+After Effects | Use After Effects Easing Panel (download) |
+link
+Copy linkLink copied
+Standard easing set
+This set is used for simple, small, or utility-focused transitions.
+link
+Copy linkLink copied
+pause
+Standard
+pause
+Standard decelerate
+pause
+Standard accelerate
+link
+Copy linkLink copied
+| Standard | Standard decelerate | Standard accelerate |
+Token | md.sys.motion.easing.standard | md.sys.motion.easing.standard.decelerate | md.sys.motion.easing.standard.accelerate |
+Android | PathInterpolator(0.2f, 0f, 0f, 1f) | PathInterpolator(0f, 0f, 0f, 1f) | PathInterpolator(0.3f, 0f, 1f, 1f) |
+CSS | cubic-bezier(0.2, 0.0, 0, 1.0); | cubic-bezier(0, 0, 0, 1); | cubic-bezier(0.3, 0, 1, 1); |
+Flutter | Cubic(0.2, 0.0, 0, 1.0); | Cubic(0, 0, 0, 1); | Cubic(0.3, 0, 1, 1); |
+iOS | ControlPoints:0.2f:0.0f:0.0f:1.0f | ControlPoints:0.0f:0.0f:0.0f:1.0f | ControlPoints:0.3f:0.0f:1.0f:1.0f]; |
+After Effects | Use After Effects Easing Panel (download) |
+link
+Copy linkLink copied
+Duration
+link
+Copy linkLink copied
+Short durations
+These are used for small utility-focused transitions.
+link
+Copy linkLink copied
+Token | Value |
+md.sys.motion.duration.short1 | 50ms |
+md.sys.motion.duration.short2 | 100ms |
+md.sys.motion.duration.short3 | 150ms |
+md.sys.motion.duration.short4 | 200ms |
+pause
+Selection controls have a short duration of 200ms with Standard easing
+link
+Copy linkLink copied
+Medium durations
+These are used for transitions that traverse a medium area of the screen.
+link
+Copy linkLink copied
+Token | Value |
+md.sys.motion.duration.medium1 | 250ms |
+md.sys.motion.duration.medium2 | 300ms |
+md.sys.motion.duration.medium3 | 350ms |
+md.sys.motion.duration.medium4 | 400ms |
+pause
+A FAB expanding into a Sheet uses a 400ms duration with Emphasized easing
+link
+Copy linkLink copied
+Long durations
+These durations are often paired with Emphasized easing. They're used for large expressive transitions.
+link
+Copy linkLink copied
+Token | Value |
+md.sys.motion.duration.long1 | 450ms |
+md.sys.motion.duration.long2 | 500ms |
+md.sys.motion.duration.long3 | 550ms |
+md.sys.motion.duration.long4 | 600ms |
+pause
+A Card expanding to full screen uses a long 500ms duration with Emphasized easing
+link
+Copy linkLink copied
+Extra long durations
+Though rare, some transitions use durations above 600ms. These are usually used for ambient transitions that don't involve user input.
+link
+Copy linkLink copied
+Token | Value |
+md.sys.motion.duration.extra-long1 | 700ms |
+md.sys.motion.duration.extra-long2 | 800ms |
+md.sys.motion.duration.extra-long3 | 900ms |
+md.sys.motion.duration.extra-long4 | 1000ms |
+pause
+An ambient carousel auto-advance transition uses an extra long 1000ms duration with emphasized easing
+arrow_left_alt PreviousEasing and duration: Applying easing and duration
+Up next arrow_right_altTransitions: Transition patterns
+vertical_align_top
+material_designMaterial Design is an adaptable system of guidelines, components, and tools that support the best practices of user interface design. Backed by open-source code, Material Design streamlines collaboration between designers and developers, and helps teams quickly build beautiful products.
+Social
+GitHub
+X
+YouTube
+Blog RSS
+Libraries
+Android
+Compose
+Flutter
+Web
+More Google sites
+Google Design
+Archived versions
+Material Design 1
+Material Design 2
+Privacy Policy
+Terms of Service
+Join research studies
+Feedback
+This website requires JavaScript.
+Standard, Android
+Custom composite with 2 properties
+Motion
+Expand all

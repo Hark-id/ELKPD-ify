@@ -1,0 +1,113 @@
+Buttons – Material Design 3
+Skip to main content menu_open
+arrow_backMain menu
+pause  Pause animations
+light_mode  Switch to light mode
+menu
+material_designMaterial Design 3search
+Buttons
+Buttons prompt most actions in a UI.
+Resourcesandroidandroid+4
+infoOverviewstyleSpecsdesign_servicesGuidelinesaccessibility_newAccessibility
+On this page
+Availability & resources
+M3 Expressive update
+Differences from M2
+link
+Copy linkLink copied
+Two variants: default and toggle
+Can contain an optional leading icon
+Five color options: elevated, filled, tonal, outlined, and text
+Five size recommendations: extra small, small, medium, large, and extra large
+Two shape options: round and square
+Keep labels concise and use sentence case
+link
+Copy linkLink copied
+Elevated button
+Filled button
+Filled tonal button
+Outlined button
+Text button
+link
+Copy linkLink copied
+Availability & resources
+link
+Copy linkLink copied
+Type | Resource | Status |
+Design  |
+Design Kit (Figma) | Available |
+Implementation  |
+Flutter | Available |
+android Jetpack Compose | Available |
+android Jetpack Compose: Expressive | Available |
+android Android Views (MDC-Android) | Available |
+android Android Views (MDC-Android): Expressive | Available |
+language Web | Available |
+language Web: Expressive
+| Unavailable |
+Close
+link
+Copy linkLink copied
+M3 Expressive update
+link
+Copy linkLink copied
+May 2025
+Buttons now have a wider variety of shapes and sizes, toggle functionality, and can change shape when selected. More on M3 Expressive
+link
+Copy linkLink copied
+Variants and naming:
+Default and toggle (selection)
+Color styles are now configurations (elevated, filled, tonal, outlined, text)
+Shapes:
+Round and square
+Shape morphs when pressed
+Shape morphs when selected
+Sizes:
+Extra small
+Small (existing, default)
+Medium
+Large
+Extra large
+New padding for small buttons:
+16dp (recommended to match padding of new sizes)
+24dp (no longer recommended)
+Five sizes
+Toggle (selection)
+Two shapes
+Two small padding widths
+link
+Copy linkLink copied
+Differences from M2
+link
+Copy linkLink copied
+Color: New color mappings and compatibility with dynamic color. Icons and labels now share the same color. Neutral text button is no longer recommended.
+Icons: Standard size for leading and trailing icons is now 20dp
+Shape: Fully-rounded corner radius and additional height options
+link
+Copy linkLink copied
+M2: Buttons have a height of 36dp and slightly rounded corner radius
+M3: Default buttons are taller at 40dp and have fully rounded corners
+arrow_left_alt PreviousButton groups: Overview
+Up next arrow_right_altButtons: Specs
+vertical_align_top
+material_designMaterial Design is an adaptable system of guidelines, components, and tools that support the best practices of user interface design. Backed by open-source code, Material Design streamlines collaboration between designers and developers, and helps teams quickly build beautiful products.
+Social
+GitHub
+X
+YouTube
+Blog RSS
+Libraries
+Android
+Compose
+Flutter
+Web
+More Google sites
+Google Design
+Archived versions
+Material Design 1
+Material Design 2
+Privacy Policy
+Terms of Service
+Join research studies
+Feedback
+This website requires JavaScript.

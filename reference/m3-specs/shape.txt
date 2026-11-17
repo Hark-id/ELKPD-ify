@@ -1,0 +1,79 @@
+Shape - Material Design 3
+Skip to main content menu_open
+arrow_backMain menu
+pause  Pause animations
+light_mode  Switch to light mode
+menu
+material_designMaterial Design 3search
+Shape
+The M3 shape system includes original shapes, a corner radius scale, and built-in shape morphing
+Overview & principlesCorner radius scaleShape morph
+On this page
+Using shape morph
+link
+Copy linkLink copied
+The Material shape library supports easy transitioning, or morphing, between shapes. Shape morph is leveraged in the
+standard button group
+Standard button groups add interactions between adjacent buttons when they're pressed.
+More on button groups
+and
+loading indicator
+Loading indicators show the progress of a process with a short wait time.
+More on loading indicators
+components.
+link
+Copy linkLink copied
+Using shape morph
+link
+Copy linkLink copied
+Access to the Material shape library and the shape morph functionality are available through a platform-specific API.
+For Android, use the Shapes in Compose API
+Web is not currently available
+Shape morphing uses the
+expressive motion scheme
+The motion physics system has two schemes: standard for utilitarian movement, and expressive for more bouncy movement.
+More about motion schemes
+by default. This can be switched to the standard motion scheme as needed.
+pause
+The Material shape library contains many types of shapes that can all morph seamlessly into each other
+link
+Copy linkLink copied
+Material uses shape morphing in the
+standard button group
+Standard button groups add interactions between adjacent buttons when they're pressed.
+More on button groups
+and
+loading indicator
+Loading indicators show the progress of a process with a short wait time.
+More on loading indicators
+components.
+pause
+The standard button group uses shape morph to show interaction
+link
+Copy linkLink copied
+pause
+The loading indicator uses shape morph to show progress
+arrow_left_alt PreviousShape: Corner radius scale
+Up next arrow_right_altSpacing: Overview
+vertical_align_top
+material_designMaterial Design is an adaptable system of guidelines, components, and tools that support the best practices of user interface design. Backed by open-source code, Material Design streamlines collaboration between designers and developers, and helps teams quickly build beautiful products.
+Social
+GitHub
+X
+YouTube
+Blog RSS
+Libraries
+Android
+Compose
+Flutter
+Web
+More Google sites
+Google Design
+Archived versions
+Material Design 1
+Material Design 2
+Privacy Policy
+Terms of Service
+Join research studies
+Feedback
+This website requires JavaScript.

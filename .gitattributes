@@ -1,0 +1,8 @@
+# Normalise line endings so contributors on any OS see the same diff.
+* text=auto eol=lf
+
+# Binary assets
+*.pdf binary
+*.png binary
+*.jpg binary
+*.woff2 binary
