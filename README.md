@@ -110,6 +110,8 @@ npx wrangler pages dev public
 
 ## Tests
 
+CI runs on every push and PR: a fast **static** job (build sync, syntax, secret guard) and, when `ELKPD_URL` is configured, the **browser suites**.
+
 The `tests/` directory holds the browser-driven suites used to verify behaviour. They run against a **deployed** URL via the Chrome DevTools Protocol, so they need no test framework:
 
 ```bash
@@ -119,7 +121,7 @@ node tests/test-race.mjs          # first-paint continuity under throttling
 node tests/test-blue.mjs          # no OS-blue highlights anywhere
 ```
 
-Each suite prints `PASS`/`FAIL` per assertion and exits non-zero on failure. Point them at your own deployment by editing the `LIVE` constant at the top of each file.
+Each suite prints `PASS`/`FAIL` per assertion and exits non-zero on failure. Point them at your own deployment with `ELKPD_URL=https://your-project.pages.dev`; the browser is located automatically (override with `CHROME_PATH`).
 
 ## Design notes
 

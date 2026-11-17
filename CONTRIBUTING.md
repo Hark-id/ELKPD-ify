@@ -33,13 +33,33 @@ Open a PR against `main`. Describe **what you observed** and **what you changed*
 
 ## Testing
 
+### What CI runs
+
+Every push and PR runs the **Static checks** job, which needs no browser and takes about 5 seconds:
+
+- assembles `build/` from `src/` and **fails if they have drifted** (so never edit `build/` by hand)
+- syntax-checks every tracked `.js`/`.mjs`
+- **guards against committed secrets** — a literal admin code, a session secret, or a committed `.dev.vars` fails the build
+
+The **Browser suites** job runs the CDP suites against a deployment. It is skipped unless the repository has an `ELKPD_URL` variable set (Settings → Secrets and variables → Actions → Variables). The admin suites additionally need an `ELKPD_ADMIN_CODE` secret.
+
+### Running them yourself
+
 The suites in `tests/` drive a real browser over the Chrome DevTools Protocol against a deployed URL. They need no test framework:
 
 ```bash
 node tests/test-blue.mjs
 ```
 
-Each prints `PASS`/`FAIL` per assertion and exits non-zero on failure. To point them at your own deployment, edit the `LIVE` constant at the top of the file.
+Each prints `PASS`/`FAIL` per assertion and exits non-zero on failure.
+
+Point them at your own deployment with an environment variable — no file editing needed:
+
+```bash
+ELKPD_URL=https://your-project.pages.dev node tests/test-blue.mjs
+```
+
+The browser is found automatically (Windows, macOS, and Linux paths are tried); override with `CHROME_PATH` if yours is elsewhere. The admin suites also need `ELKPD_ADMIN_CODE` — **never hardcode it**, the repo is public.
 
 If you add a behaviour, add a suite for it. The existing ones are named for the behaviour they guard, not the file they touch.
 
