@@ -38,6 +38,12 @@ duplicate or conflict:
    (`gh pr list`) and open issues (`gh issue list`). If your change would
    touch files another open PR is already touching, coordinate in that
    issue *before* writing code.
+
+   **Faster:** the webhook receiver buffers recent GitHub events, so you can
+   ask what changed since you last looked instead of re-listing everything.
+   See `docs/webhook.md` for the endpoint and token. The buffer is a
+   convenience, not the source of truth — always confirm against `gh` before
+   acting.
 5. **The issue is the goal.** Reference it in the PR (`Closes #N`). If the
    goal changes mid-work, update the issue first, then the code.
 6. **`docs/ROADMAP.md` is the shared goal list.** Work that is not on the
