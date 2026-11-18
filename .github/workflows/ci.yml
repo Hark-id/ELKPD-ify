@@ -100,8 +100,11 @@ jobs:
         run: |
           set -e
           # Suites that need no admin session.
+          # Keep this list in sync with tests/ — a suite that is not listed
+          # here never runs in CI, so it guards nothing.
           for t in test-case test-fold test-pin test-btngroup test-btngroup2 \
-                   test-loading-stage test-indicator test-race test-sitewide; do
+                   test-loading-stage test-indicator test-race test-sitewide \
+                   test-autogrow; do
             echo "::group::$t"
             node "tests/$t.mjs"
             echo "::endgroup::"
