@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { findChrome } from './helpers.mjs';
+import { findChrome, waitForCDP } from './helpers.mjs';
 
 const CHROME = findChrome();
 
@@ -20,7 +20,7 @@ async function open({ mobile = false, port }) {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-blue-'));
   const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${dir}`, '--no-first-run', mobile ? '--window-size=390,844' : '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
   let t = null;
-  for (let i = 0; i < 50; i++) { await sleep(200); try { const l = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json(); t = l.find(x => x.type === 'page'); if (t) break; } catch { } }
+  t = await waitForCDP(port);
   const ws = new WebSocket(t.webSocketDebuggerUrl);
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   let mid = 0; const h = new Map(); const exceptions = [];

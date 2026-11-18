@@ -8,14 +8,14 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { findChrome } from './helpers.mjs';
+import { findChrome, waitForCDP } from './helpers.mjs';
 
 const LIVE = process.env.ELKPD_URL || 'https://lkpd-cerpen-gate.pages.dev/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const d = mkdtempSync(join(tmpdir(), 'cg2-'));
 const c = spawn(findChrome(), ['--headless=new', '--remote-debugging-port=9790', `--user-data-dir=${d}`, '--no-first-run', '--window-size=1280,900', 'about:blank'], { stdio: 'ignore' });
 let t = null;
-for (let i = 0; i < 50; i++) { await sleep(200); try { const l = await (await fetch('http://127.0.0.1:9790/json/list')).json(); t = l.find(x => x.type === 'page'); if (t) break; } catch { } }
+t = await waitForCDP(9790);
 const ws = new WebSocket(t.webSocketDebuggerUrl);
 await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
 let mid = 0; const h = new Map(); const errs = [];

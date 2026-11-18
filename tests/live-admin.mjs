@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { findChrome } from './helpers.mjs';
+import { findChrome, waitForCDP } from './helpers.mjs';
 
 const CHROME = findChrome();
 
@@ -16,10 +16,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const dir = mkdtempSync(join(tmpdir(), 'cdp-live-admin-'));
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=9430', `--user-data-dir=${dir}`, '--no-first-run', '--window-size=1280,900', 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'] });
 let target = null;
-for (let i = 0; i < 50; i++) {
-  await sleep(200);
-  try { const l = await (await fetch('http://127.0.0.1:9430/json/list')).json(); target = l.find(t => t.type === 'page'); if (target) break; } catch { }
-}
+target = await waitForCDP(9430);
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let mid = 0; const h = new Map(); const dialogs = []; const exceptions = [];
