@@ -1,0 +1,21 @@
+{
+  "name": "elkpd-pdf-import-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike for issue #2: turn an arbitrary worksheet PDF into an editable ELKPD-ify scaffold (findings: docs/pdf-import-spike.md)",
+  "type": "module",
+  "scripts": {
+    "demo-pdf": "node make-demo-pdf.mjs out/demo-worksheet.pdf",
+    "demo": "node make-demo-pdf.mjs out/demo-worksheet.pdf && node extract.mjs out/demo-worksheet.pdf out/demo && node compare.mjs out/demo-worksheet.pdf out/demo/scaffold.html out/demo-compare --scale 1.5",
+    "lkpd": "node extract.mjs \"../../reference/LKPD Teks Cerpen SMA Kelas XI (1).pdf\" out/lkpd && node compare.mjs \"../../reference/LKPD Teks Cerpen SMA Kelas XI (1).pdf\" out/lkpd/scaffold.html out/lkpd-compare --scale 1.5"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38"
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas": "0.1.100"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
