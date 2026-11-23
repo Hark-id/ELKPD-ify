@@ -34,6 +34,8 @@ try {
   await b.waitFor(`!document.getElementById('editor').hidden && document.querySelector('.esh-sheet')?.dataset.ready`, 60000);
   const boxes = await b.eval(`document.querySelectorAll('.st-fb').length`);
   check('sample imports with 21 answer boxes', boxes === 21, boxes);
+  const imgs = await b.eval(`studio.sheet.pages.map(p => [p.stats.images, (p.unsupported || {}).undecodedImage || 0])`);
+  check('images survive a browser import (none dropped)', imgs.every(([n]) => n >= 1) && imgs.every(([, lost]) => lost === 0), JSON.stringify(imgs));
   check('inspector lists the fields', await b.eval(`document.querySelectorAll('.flist li').length`) === 21);
   const fit = await b.eval(`[...document.querySelectorAll('.esh-t')].map(e => +(/scaleX\\(([\\d.]+)\\)/.exec(e.style.transform)||[0,1])[1])`);
   check('text fitted against the loaded web fonts (|scaleX-1| < 0.12 for most runs)', fit.filter((k) => Math.abs(k - 1) < 0.12).length >= fit.length * 0.8, fit.map((k) => k.toFixed(2)).join(' '));

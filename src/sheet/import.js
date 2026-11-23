@@ -83,6 +83,50 @@ function base64(bytes) {
   return btoa(s);
 }
 const asBytes = (d) => (d instanceof Uint8Array ? d : new Uint8Array(d.buffer || d, d.byteOffset || 0, d.byteLength ?? d.length));
+// Photos: pdf.js hands us decoded pixels, and a photo that was a 70 KB JPEG
+// in the PDF becomes a ~700 KB PNG. Where a canvas can encode JPEG (any
+// browser; not plain Node) opaque images get a JPEG too, and the smaller
+// one wins, so flat graphics stay lossless PNG.
+async function jpegDataUri(w, h, kind, data) {
+  if (typeof OffscreenCanvas === 'undefined' || typeof ImageData === 'undefined' || w * h < 40000) return null;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  if (kind === 2) {
+    for (let i = 0, j = 0; i < w * h; i++, j += 3) { rgba[i * 4] = data[j]; rgba[i * 4 + 1] = data[j + 1]; rgba[i * 4 + 2] = data[j + 2]; rgba[i * 4 + 3] = 255; }
+  } else if (kind === 3) {
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return null; // transparency: PNG only
+    rgba.set(data.subarray(0, rgba.length));
+  } else return null;
+  try {
+    const c = new OffscreenCanvas(w, h);
+    c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+    const blob = await c.convertToBlob({ type: 'image/jpeg', quality: 0.86 });
+    return 'data:image/jpeg;base64,' + base64(new Uint8Array(await blob.arrayBuffer()));
+  } catch { return null; }
+}
+
+// In a browser pdf.js may hand images over already decoded as an
+// ImageBitmap (its worker uses the platform decoders). Same policy: PNG, or
+// JPEG when opaque and clearly smaller.
+// (The bitmap's own width isn't always populated; the image object's is.)
+async function bitmapToDataUri(img) {
+  const bmp = img && img.bitmap;
+  const w = img && (img.width || (bmp && bmp.width)), h = img && (img.height || (bmp && bmp.height));
+  if (typeof OffscreenCanvas === 'undefined' || !bmp || !w || !h) return null;
+  try {
+    const c = new OffscreenCanvas(w, h);
+    const g = c.getContext('2d');
+    g.drawImage(bmp, 0, 0, w, h);
+    const px = g.getImageData(0, 0, w, h).data;
+    let opaque = true;
+    for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) { opaque = false; break; }
+    const enc = async (type, quality) => base64(new Uint8Array(await (await c.convertToBlob({ type, quality })).arrayBuffer()));
+    const asPng = 'data:image/png;base64,' + await enc('image/png');
+    if (!opaque || w * h < 40000) return asPng;
+    const asJpeg = 'data:image/jpeg;base64,' + await enc('image/jpeg', 0.86);
+    return asJpeg.length < asPng.length * 0.6 ? asJpeg : asPng;
+  } catch { return null; }
+}
+
 // pdf.js decoded image -> PNG data URI. kind 1 = 1bpp gray (bit 1 = white,
 // rows byte-aligned, which is exactly PNG's 1-bit grayscale), 2 = RGB, 3 = RGBA.
 async function imageToDataUri(img) {
@@ -94,7 +138,9 @@ async function imageToDataUri(img) {
   else if (kind === 2) buf = await png(w, h, 2, 8, withFilterBytes(data, w * 3, h));
   else if (kind === 3) buf = await png(w, h, 6, 8, withFilterBytes(data, w * 4, h));
   else return null;
-  return 'data:image/png;base64,' + base64(buf);
+  const asPng = 'data:image/png;base64,' + base64(buf);
+  const asJpeg = kind !== 1 ? await jpegDataUri(w, h, kind, data) : null;
+  return asJpeg && asJpeg.length < asPng.length * 0.6 ? asJpeg : asPng;
 }
 // Stencil mask (paintImageMaskXObject): bit 0 = paint with the fill colour,
 // bit 1 = transparent (matches pdf.js convertBlackAndWhiteToRGBA).
@@ -199,6 +245,18 @@ async function extractPage(page, pageNo) {
   const getObj = (store, id) => { try { return store.get(id); } catch { return null; } };
   const getCommon = (id) => getObj(page.commonObjs, id);
   const getImg = (id) => (id.startsWith('g_') ? getCommon(id) : getObj(page.objs, id)) || getCommon(id);
+  // In a browser the worker sends image data after the operator list, so
+  // an image may not be resolved yet: wait for it (pdf.js' callback form of
+  // objs.get), giving up after 10 s rather than hanging the import.
+  const imgAsync = (id) => {
+    const now = getImg(id);
+    if (now) return Promise.resolve(now);
+    const store = id.startsWith('g_') ? page.commonObjs : page.objs;
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 10000);
+      try { store.get(id, (v) => { clearTimeout(t); resolve(v); }); } catch { clearTimeout(t); resolve(null); }
+    });
+  };
 
   const fresh = () => ({
     ctm: vp.transform.slice(), base: vp.transform.slice(),
@@ -474,10 +532,8 @@ async function extractPage(page, pageNo) {
         break;
       }
       case OPS.paintImageXObject: case OPS.paintImageXObjectRepeat: {
-        const img = getImg(a[0]);
-        if (img && img.bitmap) { bump('bitmapImage'); break; }
         if (fn === OPS.paintImageXObjectRepeat) bump('imageRepeat');
-        placeImage(img ? imageToDataUri(img) : null, a[1] || img?.width, a[2] || img?.height, 'image');
+        placeImage(imgAsync(a[0]).then((img) => (!img ? null : img.bitmap ? bitmapToDataUri(img) : imageToDataUri(img))), a[1], a[2], 'image');
         break;
       }
       case OPS.paintInlineImageXObject: placeImage(imageToDataUri(a[0]), a[0].width, a[0].height, 'inline'); break;
