@@ -50,7 +50,7 @@ export function validateSheet(input) {
       if (!f || !ID.test(f.id) || ids.has(f.id)) return fail(at + ': bad or duplicate field id ' + (f && f.id));
       ids.add(f.id);
       if (!KINDS.has(f.kind) || !num(f.x) || !num(f.y) || !num(f.w) || !num(f.h) || f.w <= 0 || f.h <= 0) return fail(at + ': bad field ' + f.id);
-      if (!str(f.label || '', LIMITS.label) || !str(f.placeholder || '', LIMITS.label)) return fail(at + ': field text too long ' + f.id);
+      if (!str(f.label || '', LIMITS.label) || !str(f.placeholder || '', LIMITS.label) || !str(f.prompt || '', 600)) return fail(at + ': field text too long ' + f.id);
       if (f.lineGap != null && !(num(f.lineGap) && f.lineGap > 0)) return fail(at + ': bad lineGap ' + f.id);
     }
   }
