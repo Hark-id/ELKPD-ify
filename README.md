@@ -14,6 +14,7 @@ Built for SMA Negeri 3 Yogyakarta, Bahasa Indonesia, *LKPD Teks Cerpen*. The arc
 - **Real-time collaboration.** Each group gets a private room. Answers sync live over WebSockets; the server is the source of truth, `localStorage` is only an offline cache.
 - **Server-side gate.** The worksheet HTML is never sent to a client without a valid session. There is no client-side "hide the content" trick.
 - **Self-service rooms.** Any group can create a room and receives a 6-character code. Codes are isolated: one group can never read or write another's work.
+- **Any PDF, not just this one.** The Studio (`/studio/`) imports a worksheet PDF in the browser, finds the answer areas, lets a teacher fix them, and publishes it to a project. Answers *grow*: a long answer pushes the rest of the page down instead of scrolling inside a box. Teachers get accounts, rooms per group and a live view of every group's answers; students still only need the code.
 - **An admin console.** A separate code opens a console listing every running room with live presence, answer previews, and reset/delete/report actions.
 - **Material 3 Expressive.** The application chrome (gate, tool bar, admin) follows M3 Expressive — official motion curves, the shape scale, connected button groups, and a circular wavy progress indicator.
 
@@ -25,10 +26,17 @@ Three deployables, because Cloudflare Pages cannot host Durable Objects itself:
 src/gate/       Pages project — the landing page, login, admin console, and the
                 gate that serves the worksheet. Advanced mode (_worker.js).
 src/worksheet/  The worksheet itself (static HTML + the shared wave module).
-src/rooms/      A Worker hosting the two Durable Object classes:
+src/rooms/      A Worker hosting the Durable Object classes:
                   WorksheetRoom  — one instance per group (SQLite + WebSockets)
-                  RoomRegistry   — code → room mapping (hashes only)
+                  RoomRegistry   — code → room mapping (hashes only) + project
+                  AccountStore   — teacher accounts, project index
+                  Project        — one imported sheet (versioned) + members + rooms
+src/sheet/      Imported sheets: importer (PDF → sheet.json), player (reflow),
+                room page for project rooms, validator. Format: src/sheet/format.md
+src/studio/     The Studio: import, review, publish, run a class. Static.
 ```
+
+Accounts and projects: [`docs/design/projects.md`](docs/design/projects.md). A room whose project is the built-in `lkpd-cerpen` serves the hand-built worksheet; any other project's rooms serve its imported sheet in the player, over the same `WorksheetRoom` protocol.
 
 The Pages project binds to the rooms Worker's Durable Objects via `script_name`.
 
@@ -101,6 +109,23 @@ npx wrangler pages deploy --project-name elkpd-ify
 
 ### Local development
 
+The Studio alone (no backend: import, edit, preview, export .html) needs only a static server:
+
+```bash
+node scripts/dev-studio.mjs            # http://127.0.0.1:8788/src/studio/
+```
+
+The whole stack, accounts and live project rooms included:
+
+```bash
+node scripts/sync.mjs
+(cd build/rooms && npx wrangler dev --port 8801)
+(cd build/gate  && npx wrangler pages dev public --port 8802)   # with .dev.vars as below
+# Studio: http://127.0.0.1:8802/studio/
+```
+
+The rooms Worker carries Durable Object migration `v2` (AccountStore, Project): deploy it before the gate. Set `REGISTER_CODE` on the gate to require a code for teacher sign-up.
+
 ```bash
 node scripts/sync.mjs
 cd build/gate
@@ -122,6 +147,14 @@ node tests/test-blue.mjs          # no OS-blue highlights anywhere
 ```
 
 Each suite prints `PASS`/`FAIL` per assertion and exits non-zero on failure. Point them at your own deployment with `ELKPD_URL=https://your-project.pages.dev`; the browser is located automatically (override with `CHROME_PATH`).
+
+The Studio and imported sheets have local suites that need no deployment (`npm ci` in `scripts/pdf-import` first, for pdf.js under Node):
+
+```bash
+node tests/test-import.mjs     # importer on the demo PDF and the LKPD
+node tests/test-studio.mjs     # Studio end to end in headless Chrome
+ELKPD_URL=http://127.0.0.1:8802 node tests/test-projects.mjs   # accounts, projects, two students live
+```
 
 ## Design notes
 
