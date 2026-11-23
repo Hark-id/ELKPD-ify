@@ -476,6 +476,9 @@ function fieldPanel(f, pg, pi) {
     h('label', { class: 'fld' }, h('span', {}, 'Nama isian'),
       h('input', { type: 'text', value: f.label || '', placeholder: 'mis. Jawaban no. 1', onchange: (e) => edit(() => { f.label = e.target.value.trim(); }) })),
     kinds,
+    h('label', { class: 'fld' }, h('span', {}, 'Pertanyaan'),
+      h('textarea', { rows: '2', placeholder: 'Pertanyaan yang dijawab di isian ini', onchange: (e) => edit(() => { const v = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 600); if (v) f.prompt = v; else delete f.prompt; }) }, f.prompt || ''),
+      h('small', {}, 'Ditampilkan bersama isian saat siswa menjawab di HP.')),
   );
   if (f.kind !== 'checkbox') {
     wrap.append(h('label', { class: 'fld' }, h('span', {}, 'Teks bantuan (placeholder)'),
