@@ -43,6 +43,10 @@ export async function launch({ width = 1280, height = 900, port = 9300 + Math.fl
   await send('Page.enable');
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
+  // Headless pages have no focus: .focus() moves activeElement but fires no
+  // focus event, so anything driven by focus (presence) would pass or fail
+  // by machine. Emulate a focused page.
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true });
   const errors = [];
   listeners.push((m) => {
     if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text);

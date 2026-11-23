@@ -52,6 +52,9 @@ All geometry is in **PDF points, origin top-left**. A page renders at
 - Text and labels are always set with `textContent` / attributes, never
   `innerHTML`.
 - Field ids match `^[A-Za-z0-9_-]{1,60}$` and are unique across the sheet.
+- Field ids are stored, not derived: `p1-f3` is just the id the importer
+  gave it. Reordering or deleting pages, moving fields between pages, or
+  re-publishing never renames a field, so answers stay bound to it.
 
 ## Reflow
 
