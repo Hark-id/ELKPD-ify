@@ -58,9 +58,17 @@ textarea.esh-ed-input{min-height:96px;max-height:40vh}
 .esh-ed-nav{background:#ffdad9;color:#2c1515;min-width:48px}
 .esh-ed-nav:disabled{opacity:.38}
 .esh-ed-done{margin-left:auto;background:#a80029;color:#fff}
+/* Print at the paper's real size: geometry is in pt and 1pt = 96/72 CSS px.
+   The zoom is a hair under 4/3 because PDF producers round page sizes up
+   (Chrome's A4 is 842.25pt, the paper 841.89pt), and that sliver would push
+   a blank sheet after every page. A page that grew past the paper
+   continues on the next sheet. */
+@page{margin:0}
 @media print{
-  .esh-sheet .esh-pw{margin:0;width:auto!important;height:auto!important;break-after:page}
-  .esh-sheet .esh-page{position:relative;transform:none!important;box-shadow:none}
+  .esh-sheet .esh-pw{margin:0;width:auto!important;height:auto!important;break-after:page;break-inside:auto}
+  .esh-sheet .esh-pw:last-child{break-after:auto}
+  .esh-sheet .esh-page{position:relative;transform:none!important;box-shadow:none;zoom:1.3313}
+  .esh-ed{display:none}
   .esh-sheet .esh-f{background:transparent}
   .esh-sheet .esh-f:focus-visible{box-shadow:none}
   .esh-peer-flag{display:none}
