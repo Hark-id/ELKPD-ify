@@ -542,32 +542,56 @@ async function extractPage(page, pageNo) {
   return pageData;
 }
 
+// Latin presentation-form ligatures. Fonts that carry them as single glyphs
+// hand us U+FB00..FB06; the sheet wants plain letters (searchable, editable,
+// and the web font may lack the ligature codepoint).
+const LIGATURES = { 'ﬀ': 'ff', 'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'ſt', 'ﬆ': 'st' };
+const expandLigatures = (ch) => ch.replace(/[ﬀ-ﬆ]/g, (c) => LIGATURES[c]);
+
 // Merge glyphs (Skia/Chrome PDFs place every glyph separately) into spans:
 // same baseline, same style, contiguous in x. A gap wider than ~0.18em
 // between two non-space glyphs becomes a space.
+//
+// "Same style" compares the typeface, not the PDF font object: Skia splits
+// one face over several Type 3 fonts (one per block of glyph ids), so the
+// "fi" ligature of Roboto-Bold arrives in a different font object than the
+// letters around it. Keying on the object cut the run there and the word
+// space next to the cut was trimmed away ("makna" | "fi" | "loso" ...).
+//
+// `chars` holds one [x offset, char] per character of `text` (ligatures are
+// expanded and spread over the glyph's advance, synthetic spaces sit at the
+// end of the previous glyph), so charX indexes line up with the string.
 function mergeGlyphs(glyphs, fonts) {
   const spans = [];
   let s = null;
-  const styleKey = (g) => `${g.font}|${g.color}|${g.alpha}|${g.size.toFixed(2)}|${g.angle.toFixed(3)}`;
+  const face = (id) => { const f = fonts[id]; return (f && f.pdfName) || id; };
+  const styleKey = (g) => `${face(g.font)}|${g.color}|${g.alpha}|${g.size.toFixed(2)}|${g.angle.toFixed(3)}`;
+  // Per-character entries for one glyph, `x0` relative to the span start.
+  const charsOf = (str, x0, adv) => {
+    const n = str.length;
+    return Array.from({ length: n }, (_, i) => [r2(x0 + (adv * i) / n), str[i]]);
+  };
   for (const g of glyphs) {
     const key = styleKey(g);
+    const str = expandLigatures(g.ch);
     if (s && s.key === key && Math.abs(g.angle) < 0.001) {
       const gap = g.x - s.endX;
       if (Math.abs(g.y - s.y) < 0.2 * g.size && gap > -0.5 * g.size && gap < 0.9 * g.size) {
         const last = s.text[s.text.length - 1];
-        if (gap > 0.18 * g.size && last !== ' ' && g.ch !== ' ') s.text += ' ';
-        s.text += g.ch; s.chars.push([r2(g.x - s.x), g.ch]); s.endX = g.x + g.adv;
+        if (gap > 0.18 * g.size && last !== ' ' && g.ch !== ' ') { s.text += ' '; s.chars.push([r2(s.endX - s.x), ' ']); }
+        s.text += str; s.chars.push(...charsOf(str, g.x - s.x, g.adv)); s.endX = g.x + g.adv;
         continue;
       }
     }
     if (s && s.key === key && Math.abs(g.angle) >= 0.001 && Math.abs(g.y - s.endY) < 0.6 * g.size && Math.abs(g.x - s.endX) < 0.6 * g.size) {
-      s.text += g.ch; s.chars.push([0, g.ch]); s.endX = g.x + g.adv * Math.cos(g.angle); s.endY = g.y + g.adv * Math.sin(g.angle);
+      s.text += str; s.chars.push(...charsOf(str, 0, 0)); s.endX = g.x + g.adv * Math.cos(g.angle); s.endY = g.y + g.adv * Math.sin(g.angle);
       s.rotAdv += g.adv;
       continue;
     }
     if (s) spans.push(s);
     s = { key, x: g.x, y: g.y, endX: g.x + g.adv * Math.cos(g.angle), endY: g.y + g.adv * Math.sin(g.angle), rotAdv: g.adv,
-      size: g.size, angle: g.angle, font: g.font, color: g.color, alpha: g.alpha, text: g.ch, chars: [[0, g.ch]] };
+      size: g.size, angle: g.angle, font: g.font, color: g.color, alpha: g.alpha, text: str,
+      chars: charsOf(str, 0, Math.abs(g.angle) < 0.001 ? g.adv : 0) };
   }
   if (s) spans.push(s);
   return spans
