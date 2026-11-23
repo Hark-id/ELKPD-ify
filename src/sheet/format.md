@@ -30,6 +30,7 @@ All geometry is in **PDF points, origin top-left**. A page renders at
       "kind": "textarea",  // text | textarea | checkbox | date | number
       "x": 66, "y": 140, "w": 460, "h": 40,
       "label": "Jawaban no. 1",   // accessible name, and what the teacher sees
+      "prompt": "1. Siapakah …",  // optional: the question it answers (shown in the phone editor)
       "placeholder": "…",         // optional
       "lineGap": 22, "lines": 3,  // optional: answer written on ruled lines
       "grow": false,              // optional: textarea doesn't grow (default: grows)

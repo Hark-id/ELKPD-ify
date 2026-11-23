@@ -957,6 +957,31 @@ function renderSvg(pg) {
 }
 
 
+// The question an answer belongs to: the nearest numbered item above it
+// ("2. Jelaskan ...", "b) Sebutkan ..."), with its wrapped continuation
+// lines. Shown with the answer on phones, where the page itself is tiny.
+function promptFor(box, spans) {
+  const NUM = /^\s*(\d{1,2}|[a-hA-H])[.)]\s+\S/;
+  const live = spans.filter((s) => !s.angle && s.alpha >= 0.5);
+  let best = null;
+  for (const s of live) {
+    if (!NUM.test(s.text) || s.baseline > box[1] + 2 || box[1] - s.baseline > 260) continue;
+    if (s.x > box[2] || s.x + s.width < box[0] - 120) continue;
+    if (!best || s.baseline > best.baseline) best = s;
+  }
+  if (!best) return '';
+  const lines = [best];
+  for (;;) {
+    const last = lines[lines.length - 1];
+    const next = live.filter((s) => s !== last && Math.abs(s.size - last.size) < 0.6 && s.baseline > last.baseline &&
+      s.baseline - last.baseline < last.size * 1.9 && s.baseline < box[1] + 2 && s.x > best.x - 4 && s.x < best.x + 40 && !NUM.test(s.text))
+      .sort((a, b) => a.baseline - b.baseline)[0];
+    if (!next || lines.length >= 4) break;
+    lines.push(next);
+  }
+  return lines.map((s) => s.text.trim()).join(' ').replace(/\s+/g, ' ').slice(0, 400);
+}
+
 // ------------------------------------------------------------ sheet out
 // The sheet format is documented in format.md. Geometry is in PDF points,
 // origin top-left; the player scales pages as a whole.
@@ -975,6 +1000,8 @@ function toSheetPage(pg) {
     const o = { id: f.id, kind: f.kind === 'input' ? 'text' : f.kind, x: f.x, y: f.y, w: f.w, h: f.h, label: f.label || '', source: f.source };
     if (f.lineGap) { o.lineGap = f.lineGap; o.lines = f.lines; }
     if (f.size) o.size = f.size;
+    const prompt = promptFor([f.x, f.y, f.x + f.w, f.y + f.h], pg.spans);
+    if (prompt && prompt !== o.label) o.prompt = prompt;
     return o;
   });
   return {

@@ -40,6 +40,24 @@ input.esh-f[type=checkbox]{padding:0;accent-color:var(--esh-accent);cursor:point
   background:var(--peer-color,#e8710a);padding:0 5px;border-radius:4px 4px 4px 0;white-space:nowrap;pointer-events:none;z-index:2}
 .esh-sheet.esh-bare .esh-f{background:transparent}
 .esh-sheet[data-readonly] .esh-f{pointer-events:none}
+.esh-f.esh-editing{box-shadow:0 0 0 2px var(--esh-accent);background:rgba(31,111,235,.16)}
+.esh-ed{position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff8f7;border-radius:20px 20px 0 0;box-shadow:0 -4px 16px rgba(0,0,0,.18);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));font-family:'Roboto Flex',Roboto,Arial,sans-serif;color:#231919;
+  transform:translateY(110%);transition:transform .3s cubic-bezier(.2,0,0,1)}
+.esh-ed.open{transform:none}
+.esh-ed-head{display:flex;align-items:baseline;gap:8px;margin:0 2px 8px}
+.esh-ed-label{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:18px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.esh-ed-pos{font-size:12px;color:#534342;white-space:nowrap}
+.esh-ed-q{margin:-4px 2px 10px;font-size:13px;line-height:18px;color:#534342;max-height:54px;overflow:auto}
+.esh-ed-input{display:block;width:100%;box-sizing:border-box;border:1px solid #857372;border-radius:8px;padding:10px 12px;font:16px/1.4 'Arimo',Arial,sans-serif;color:#0d2a57;background:#fff;resize:none}
+textarea.esh-ed-input{min-height:96px;max-height:40vh}
+.esh-ed-input:focus{outline:none;border-color:#a80029;box-shadow:inset 0 0 0 1px #a80029}
+.esh-ed-row{display:flex;gap:8px;margin-top:10px;align-items:center}
+.esh-ed-row button{height:40px;border:0;border-radius:999px;font:500 14px/1 inherit;padding:0 16px;-webkit-tap-highlight-color:transparent;transition:border-radius .15s}
+.esh-ed-row button:active{border-radius:8px}
+.esh-ed-nav{background:#ffdad9;color:#2c1515;min-width:48px}
+.esh-ed-nav:disabled{opacity:.38}
+.esh-ed-done{margin-left:auto;background:#a80029;color:#fff}
 @media print{
   .esh-sheet .esh-pw{margin:0;width:auto!important;height:auto!important;break-after:page}
   .esh-sheet .esh-page{position:relative;transform:none!important;box-shadow:none}
@@ -109,7 +127,12 @@ export function createPlayer(container, sheet, opts = {}) {
 
   const blobUrls = [];
   const fieldEls = new Map(); // id -> element
+  // phone answer editor state (see openEditor)
+  const order = [];       // field defs in reading order
+  const pageOf = new Map(); // field id -> page record
+  const editor = { el: null, input: null, id: null };
   const pages = sheet.pages.map((pg) => buildPage(pg));
+  for (const p of pages) for (const { f } of p.fields) { order.push(f); pageOf.set(f.id, p); }
 
   function buildPage(pg) {
     const pw = doc.createElement('div');
@@ -203,9 +226,93 @@ export function createPlayer(container, sheet, opts = {}) {
       schedule();
     };
     el.addEventListener(f.kind === 'checkbox' ? 'change' : 'input', fire);
-    el.addEventListener('focus', () => opts.onFocus && opts.onFocus(f.id));
-    el.addEventListener('blur', () => opts.onFocus && opts.onFocus(null));
+    el.addEventListener('focus', () => {
+      if (useEditor(f)) { openEditor(f.id); return; }
+      if (opts.onFocus) opts.onFocus(f.id);
+    });
+    el.addEventListener('blur', () => { if (!editor.id && opts.onFocus) opts.onFocus(null); });
     return el;
+  }
+
+  // ------------------------------------------------- phone answer editor
+  // On a phone an A4 page is shown at ~60%, so its fields are a few px
+  // tall. Tapping one opens a bottom sheet with the question's label and a
+  // full-size input (16px: no iOS zoom-on-focus) that writes through to the
+  // field, with previous/next to walk the sheet in reading order.
+  function useEditor(f) {
+    if (opts.readOnly || opts.focusEditor === false || f.kind === 'checkbox') return false;
+    const p = pageOf.get(f.id);
+    return !!p && p.scale < 0.8;
+  }
+  function buildEditor() {
+    if (editor.el) return;
+    const ed = doc.createElement('div');
+    ed.className = 'esh-ed';
+    ed.setAttribute('role', 'dialog');
+    ed.innerHTML = '<div class="esh-ed-head"><span class="esh-ed-label"></span><span class="esh-ed-pos"></span></div>' +
+      '<p class="esh-ed-q"></p><div class="esh-ed-box"></div><div class="esh-ed-row"><button type="button" class="esh-ed-nav" data-d="-1" aria-label="Isian sebelumnya">&#8249;</button>' +
+      '<button type="button" class="esh-ed-nav" data-d="1" aria-label="Isian berikutnya">&#8250;</button><button type="button" class="esh-ed-done">Selesai</button></div>';
+    ed.querySelectorAll('.esh-ed-nav').forEach((b) => b.addEventListener('click', () => step(+b.dataset.d)));
+    ed.querySelector('.esh-ed-done').addEventListener('click', closeEditor);
+    doc.body.appendChild(ed);
+    editor.el = ed;
+    const vv = doc.defaultView.visualViewport;
+    // Keep the sheet above the on-screen keyboard.
+    if (vv) vv.addEventListener('resize', editor.onVV = () => {
+      ed.style.bottom = Math.max(0, doc.defaultView.innerHeight - vv.height - vv.offsetTop) + 'px';
+    });
+  }
+  function openEditor(id) {
+    buildEditor();
+    const f = order.find((q) => q.id === id);
+    const el = fieldEls.get(id);
+    if (!f || !el) return;
+    if (editor.id && editor.id !== id) fieldEls.get(editor.id)?.classList.remove('esh-editing');
+    editor.id = id;
+    el.blur();
+    el.classList.add('esh-editing');
+    const box = editor.el.querySelector('.esh-ed-box');
+    box.textContent = '';
+    const input = doc.createElement(f.kind === 'textarea' ? 'textarea' : 'input');
+    if (f.kind !== 'textarea') input.type = f.kind === 'date' ? 'date' : f.kind === 'number' ? 'number' : 'text';
+    input.className = 'esh-ed-input';
+    input.value = el.value;
+    input.placeholder = f.placeholder || 'Tulis jawabanmu…';
+    input.setAttribute('aria-label', f.label || 'Isian');
+    input.addEventListener('input', () => {
+      el.value = input.value;
+      if (opts.onInput) opts.onInput(id, input.value);
+      schedule();
+    });
+    if (f.kind !== 'textarea') input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); step(1); } });
+    box.appendChild(input);
+    editor.input = input;
+    editor.el.querySelector('.esh-ed-label').textContent = f.label || 'Isian';
+    const q = editor.el.querySelector('.esh-ed-q');
+    q.textContent = f.prompt || '';
+    q.hidden = !f.prompt;
+    const i = order.indexOf(f);
+    editor.el.querySelector('.esh-ed-pos').textContent = `${i + 1}/${order.length}`;
+    const navs = editor.el.querySelectorAll('.esh-ed-nav');
+    navs[0].disabled = !order.slice(0, i).some((q) => q.kind !== 'checkbox');
+    navs[1].disabled = !order.slice(i + 1).some((q) => q.kind !== 'checkbox');
+    editor.el.classList.add('open');
+    input.focus({ preventScroll: true });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (opts.onFocus) opts.onFocus(id);
+  }
+  function step(d) {
+    let i = order.findIndex((q) => q.id === editor.id);
+    do i += d; while (order[i] && order[i].kind === 'checkbox');
+    if (order[i]) openEditor(order[i].id);
+  }
+  function closeEditor() {
+    if (!editor.id) return;
+    fieldEls.get(editor.id)?.classList.remove('esh-editing');
+    editor.id = null;
+    editor.el.classList.remove('open');
+    if (editor.input) editor.input.blur();
+    if (opts.onFocus) opts.onFocus(null);
   }
 
   function getElValue(el) {
@@ -364,14 +471,14 @@ export function createPlayer(container, sheet, opts = {}) {
     fields: fieldEls,
     setValue(id, v) {
       const el = fieldEls.get(id);
-      if (!el || doc.activeElement === el) return;
+      if (!el || doc.activeElement === el || editor.id === id) return;
       setElValue(el, v);
       schedule();
     },
     setValues(values) {
       for (const [id, v] of Object.entries(values || {})) {
         const el = fieldEls.get(id);
-        if (el && doc.activeElement !== el) setElValue(el, v);
+        if (el && doc.activeElement !== el && editor.id !== id) setElValue(el, v);
       }
       schedule();
     },
@@ -405,6 +512,7 @@ export function createPlayer(container, sheet, opts = {}) {
     destroy() {
       if (ro) ro.disconnect();
       if (doc.fonts && doc.fonts.removeEventListener) doc.fonts.removeEventListener('loadingdone', refit);
+      if (editor.el) { editor.el.remove(); const vv = doc.defaultView.visualViewport; if (vv && editor.onVV) vv.removeEventListener('resize', editor.onVV); }
       cancelAnimationFrame(refitRaf);
       cancelAnimationFrame(raf);
       blobUrls.forEach((u) => URL.revokeObjectURL(u));
