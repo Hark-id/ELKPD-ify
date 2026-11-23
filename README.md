@@ -120,9 +120,13 @@ The whole stack, accounts and live project rooms included:
 ```bash
 node scripts/sync.mjs
 (cd build/rooms && npx wrangler dev --port 8801)
-(cd build/gate  && npx wrangler pages dev public --port 8802)   # with .dev.vars as below
+(cd build/gate  && npx wrangler pages dev public --port 8802 \
+   --do ROOM=WorksheetRoom@lkpd-cerpen-rooms --do REGISTRY=RoomRegistry@lkpd-cerpen-rooms \
+   --do ACCOUNTS=AccountStore@lkpd-cerpen-rooms --do PROJECT=Project@lkpd-cerpen-rooms)   # with .dev.vars as below
 # Studio: http://127.0.0.1:8802/studio/
 ```
+
+Some wrangler versions don't read the `script_name` bindings from `wrangler.toml` in `pages dev`; the `--do` flags make it explicit. Without them every `/api/account/*` call answers 501.
 
 The rooms Worker carries Durable Object migration `v2` (AccountStore, Project): deploy it before the gate. Set `REGISTER_CODE` on the gate to require a code for teacher sign-up.
 

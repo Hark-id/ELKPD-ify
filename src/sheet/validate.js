@@ -10,6 +10,7 @@ export const LIMITS = {
   bytes: 16e6, pages: 200, fieldsPerPage: 400, textPerPage: 5000,
   backgroundBytes: 4e6, str: 2000, label: 200, title: 120,
 };
+const FONT_STACK = /^\s*('[A-Za-z0-9 ]{1,60}'|serif|sans-serif|monospace)(\s*,\s*('[A-Za-z0-9 ]{1,60}'|serif|sans-serif|monospace)){0,7}\s*$/;
 const KINDS = new Set(['text', 'textarea', 'checkbox', 'date', 'number']);
 const ID = /^[A-Za-z0-9_-]{1,60}$/;
 // Field ids become DOM ids next to the app's own chrome; these would
@@ -37,7 +38,9 @@ export function validateSheet(input) {
   if (!Array.isArray(sheet.pages) || !sheet.pages.length || sheet.pages.length > LIMITS.pages) return fail('bad pages');
   if (sheet.fonts && typeof sheet.fonts !== 'object') return fail('bad fonts');
   for (const [k, f] of Object.entries(sheet.fonts || {})) {
-    if (!ID.test(k) || !f || !str(f.css, 300) || /[<>{};]|url\s*\(/i.test(f.css)) return fail('bad font ' + k);
+    // Allowlist, not denylist: `css` is a font-family list and nothing else,
+    // i.e. quoted family names and generic keywords, comma separated.
+    if (!ID.test(k) || !f || !str(f.css, 300) || !FONT_STACK.test(f.css)) return fail('bad font ' + k);
     if (f.web && (!Array.isArray(f.web) || f.web.some((w) => !/^[A-Za-z0-9 ]{1,60}$/.test(w)))) return fail('bad web font ' + k);
   }
   const ids = new Set();
