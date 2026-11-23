@@ -449,6 +449,7 @@ export class Project {
       return json({ ok: true });
     }
     if (path === '/info') return json({ ok: true, project: this.info() });
+    if (path === '/version') return json({ ok: true, version: Number(this.meta().version || 0) });
     if (path === '/role') {
       const r = this.sql.exec('SELECT role FROM members WHERE user_id = ?', String(b.userId || '')).toArray()[0];
       return json({ ok: true, role: r ? r.role : null, title: this.meta().title || '' });

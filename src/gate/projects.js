@@ -93,7 +93,7 @@ const err = (status, error) => Response.json({ ok: false, error }, { status });
  */
 export async function projectsApi(request, env, url, roomSession) {
   const p = url.pathname;
-  const isOurs = p.startsWith("/api/account/") || p === "/api/projects" || p.startsWith("/api/projects/") || p === "/api/room/sheet" || p.startsWith("/j/");
+  const isOurs = p.startsWith("/api/account/") || p === "/api/projects" || p.startsWith("/api/projects/") || p === "/api/room/sheet" || p === "/api/room/version" || p.startsWith("/j/");
   if (!isOurs) return null;
   if (!env.ACCOUNTS || !env.PROJECT) return err(501, "Akun belum diaktifkan di server ini.");
 
@@ -121,12 +121,14 @@ export async function projectsApi(request, env, url, roomSession) {
   }
 
   /* ---------------- the sheet for the room this browser is in */
-  if (p === "/api/room/sheet") {
+  if (p === "/api/room/sheet" || p === "/api/room/version") {
     if (!roomSession || roomSession.roomId === "admin-console") return err(401, "unauthorized");
     const info = await call(registry, "/by-room", { roomId: roomSession.roomId });
     if (!info.ok || !info.projectId || info.projectId === LEGACY_PROJECT) return err(404, "no sheet");
+    // version: polled by the room page so students learn about a re-publish
+    if (p === "/api/room/version") return ok({ version: (await call(project(info.projectId), "/version")).version });
     const res = await project(info.projectId).fetch("https://do/sheet", { method: "POST" });
-    return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+    return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Sheet-Version": res.headers.get("X-Sheet-Version") || "" } });
   }
 
   /* ---------------- accounts */
