@@ -102,6 +102,7 @@ draws "NAMA KELOMPOK / ANGGOTA" as two plain dotted lines, so we produce one
 structured inputs (4 members × name/presensi, …). No geometry implies that
 structure; it is an authoring decision.
 
+![LKPD page 1: PDF, scaffold, diff](pdf-import-spike/lkpd-page-1.png)
 ![LKPD page 2: PDF, scaffold, diff](pdf-import-spike/lkpd-page-2.png)
 
 ## What extracts cleanly, and what doesn't
