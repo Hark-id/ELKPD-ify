@@ -490,7 +490,17 @@ export class Project {
       return json({ ok: true });
     }
     if (path === '/info') return json({ ok: true, project: this.info() });
-    if (path === '/version') return json({ ok: true, version: Number(this.meta().version || 0) });
+    /* a student room's project (#15): no owner, no members, never listed */
+    if (path === '/init-anon') {
+      if (this.meta().id) return json({ ok: false, error: 'exists' }, 409);
+      this.setMeta('id', b.id);
+      this.setMeta('title', String(b.title || 'Lembar kerja').slice(0, 120));
+      this.setMeta('owner', '');
+      this.setMeta('anon', '1');
+      this.setMeta('created_at', Date.now());
+      return json({ ok: true });
+    }
+    if (path === '/version') { const m = this.meta(); return json({ ok: true, version: Number(m.version || 0), anon: m.anon === '1' }); }
     if (path === '/role') {
       const r = this.sql.exec('SELECT role FROM members WHERE user_id = ?', String(b.userId || '')).toArray()[0];
       return json({ ok: true, role: r ? r.role : null, title: this.meta().title || '' });

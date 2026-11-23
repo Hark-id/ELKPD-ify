@@ -21,6 +21,7 @@ const isRole = (r) => typeof r === "string" && Object.prototype.hasOwnProperty.c
 const MAX_SHEET_BYTES = 16e6;
 const MAX_ROOMS = 40;          // per project: /answers fans out one subrequest per room
 const MAX_OWNED = 100;         // projects per account
+const MAX_STUDENT_SHEET = 8e6; // a student room's sheet (no account behind it)
 // A PBKDF2 hash of nothing in particular: unknown usernames are checked
 // against it so they take as long as known ones (no timing enumeration).
 const DUMMY_HASH = "pbkdf2$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000";
@@ -98,9 +99,9 @@ const err = (status, error) => Response.json({ ok: false, error }, { status });
  * Handle /api/account/*, /api/projects/*, /api/room/sheet, /j/:code.
  * Returns null for anything else so _worker.js carries on.
  */
-export async function projectsApi(request, env, url, roomSession) {
+export async function projectsApi(request, env, url, roomSession, hooks = {}) {
   const p = url.pathname;
-  const isOurs = p.startsWith("/api/account/") || p === "/api/projects" || p.startsWith("/api/projects/") || p === "/api/room/sheet" || p === "/api/room/version" || p.startsWith("/j/");
+  const isOurs = p.startsWith("/api/account/") || p === "/api/projects" || p.startsWith("/api/projects/") || p.startsWith("/api/room/") || p === "/api/rooms/from-sheet" || p.startsWith("/j/");
   if (!isOurs) return null;
   if (!env.ACCOUNTS || !env.PROJECT) return err(501, "Akun belum diaktifkan di server ini.");
 
@@ -126,10 +127,11 @@ export async function projectsApi(request, env, url, roomSession) {
   // there one shared "IP" would make the test suites throttle themselves.
   const throttle = async (key, max, windowMs) => !request.headers.get("CF-Connecting-IP") || (await call(accounts, "/throttle", { key, max, windowMs })).ok;
   // Sheets: refuse by declared size before reading, then by real bytes.
-  const readSheet = async () => {
-    if (Number(request.headers.get("Content-Length") || 0) > MAX_SHEET_BYTES) return { error: "Lembar terlalu besar (maks. 16 MB)." };
+  const readSheet = async (max = MAX_SHEET_BYTES) => {
+    const tooBig = `Lembar terlalu besar (maks. ${Math.round(max / 1e6)} MB).`;
+    if (Number(request.headers.get("Content-Length") || 0) > max) return { error: tooBig };
     const buf = await request.arrayBuffer();
-    if (buf.byteLength > MAX_SHEET_BYTES) return { error: "Lembar terlalu besar (maks. 16 MB)." };
+    if (buf.byteLength > max) return { error: tooBig };
     const text = new TextDecoder().decode(buf);
     const v = validateSheet(text);
     return v.ok ? { text, sheet: v.sheet } : { error: "Lembar tidak valid: " + v.error };
@@ -145,15 +147,68 @@ export async function projectsApi(request, env, url, roomSession) {
     return Response.redirect(new URL("/?code=" + encodeURIComponent(code), url).toString(), 302);
   }
 
-  /* ---------------- the sheet for the room this browser is in */
-  if (p === "/api/room/sheet" || p === "/api/room/version") {
+  /* ---------------- student rooms (#15): a PDF in, a room out, no account.
+     The sheet lives in an *anonymous* project (no owner, no members);
+     whoever holds a room session of it may fix the sheet and open rooms
+     for other groups. Teacher projects never allow either from a room. */
+  const makeRoom = async (pid, label) => {
+    const legacy = normalizeCode(env.GROUP_CODE || "");
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const code = makeCode();
+      if (code === legacy) continue;
+      const roomId = "room-" + randomHex(8);
+      const claimed = await call(registry, "/claim", { codeHash: await sha256(code), roomId, label, code, projectId: pid });
+      if (claimed.ok) { await call(project(pid), "/add-room", { roomId, label, code }); return { id: roomId, label, code }; }
+    }
+    return null;
+  };
+  if (p === "/api/rooms/from-sheet" && request.method === "POST") {
+    if (!hooks.issueRoomCookie) return err(501, "not available");
+    if (!(await throttle("student-sheet:" + ip, 8, 3600000))) return err(429, "Terlalu banyak ruang dibuat dari jaringan ini. Coba lagi nanti.");
+    const label = String(url.searchParams.get("label") || "").trim().slice(0, 60) || "Kelompok";
+    const got = await readSheet(MAX_STUDENT_SHEET);
+    if (got.error) return err(400, got.error);
+    const pid = "anon-" + randomHex(8);
+    const stub = project(pid);
+    const init = await call(stub, "/init-anon", { id: pid, title: String(got.sheet.title || "Lembar kerja").slice(0, 120) });
+    const pub = init.ok && await (await stub.fetch("https://do/publish?by=siswa", { method: "POST", body: got.text })).json();
+    if (!pub || !pub.ok) return err(500, "Gagal menyimpan lembar. Coba lagi.");
+    const r = await makeRoom(pid, label);
+    if (!r) return err(503, "Gagal membuat kode. Coba lagi.");
+    return ok({ room: r }, { headers: { "Set-Cookie": await hooks.issueRoomCookie(r.id) } });
+  }
+
+  /* ---------------- the room this browser is in */
+  if (p.startsWith("/api/room/")) {
     if (!roomSession || roomSession.roomId === "admin-console") return err(401, "unauthorized");
     const info = await call(registry, "/by-room", { roomId: roomSession.roomId });
     if (!info.ok || !info.projectId || info.projectId === LEGACY_PROJECT) return err(404, "no sheet");
+    const stub = project(info.projectId);
+    const anon = info.projectId.startsWith("anon-") && (await call(stub, "/version")).anon === true;
     // version: polled by the room page so students learn about a re-publish
-    if (p === "/api/room/version") return ok({ version: (await call(project(info.projectId), "/version")).version });
-    const res = await project(info.projectId).fetch("https://do/sheet", { method: "POST" });
-    return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Sheet-Version": res.headers.get("X-Sheet-Version") || "" } });
+    if (p === "/api/room/version") return ok({ version: (await call(stub, "/version")).version });
+    if (p === "/api/room/sheet" && request.method === "GET") {
+      const res = await stub.fetch("https://do/sheet", { method: "POST" });
+      return new Response(res.body, { status: res.status, headers: {
+        "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store",
+        "X-Sheet-Version": res.headers.get("X-Sheet-Version") || "", "X-Sheet-Editable": anon ? "1" : "0" } });
+    }
+    if (!anon) return err(403, "Lembar ini dikelola guru.");
+    if (p === "/api/room/sheet" && request.method === "PUT") {
+      if (!(await throttle("student-publish:" + ip, 30, 3600000))) return err(429, "Terlalu sering. Coba lagi nanti.");
+      const got = await readSheet(MAX_STUDENT_SHEET);
+      if (got.error) return err(400, got.error);
+      const res = await (await stub.fetch("https://do/publish?by=siswa", { method: "POST", body: got.text })).json();
+      if (got.sheet.title) await call(stub, "/set-title", { title: String(got.sheet.title).slice(0, 120) });
+      return ok({ version: res.version });
+    }
+    if (p === "/api/room/new-room" && request.method === "POST") {
+      if (!(await throttle("student-room:" + ip, 20, 3600000))) return err(429, "Terlalu banyak ruang. Coba lagi nanti.");
+      if ((await call(stub, "/info")).project.rooms.length >= MAX_ROOMS) return err(403, `Paling banyak ${MAX_ROOMS} ruang per lembar.`);
+      const r = await makeRoom(info.projectId, String((await input()).label || "").trim().slice(0, 60) || "Kelompok");
+      return r ? ok({ room: r }) : err(503, "Gagal membuat kode. Coba lagi.");
+    }
+    return err(404, "not found");
   }
 
   /* ---------------- accounts */

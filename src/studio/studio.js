@@ -40,6 +40,14 @@ let classRoom = null; // selected room id in the Kelas tab
 let classTimer = 0;
 const undo = [], redo = [];
 
+// Student mode (#15): /studio/?untuk=kelompok turns a PDF into a group room
+// with no account; /studio/?ruang=edit fixes the sheet of the room this
+// browser is in. Both end in a room, not in an account's project.
+const QS = new URLSearchParams(location.search);
+const GROUP = QS.get('untuk') === 'kelompok';
+const ROOM_EDIT = QS.get('ruang') === 'edit';
+const STUDENT = GROUP || ROOM_EDIT;
+
 // ------------------------------------------------------------ helpers
 function show(view) {
   for (const v of ['start', 'busy', 'editor']) $(v).hidden = v !== view;
@@ -47,7 +55,61 @@ function show(view) {
   $('title').hidden = $('modeSeg').hidden = $('exportBtn').hidden = $('undoBtn').hidden = !inEditor;
   $('classTab').hidden = !inEditor || !project;
   $('publishItem').hidden = !cloud.available;
+  if (STUDENT) {
+    $('exportBtn').textContent = ROOM_EDIT ? 'Simpan ke ruang' : 'Buat ruang';
+    $('exportBtn').removeAttribute('aria-haspopup');
+    $('accountBtn').hidden = true;
+  }
   if (!inEditor) stopClassPolling();
+}
+
+// A small in-app text dialog (the auth dialog's look); resolves the text,
+// or null when cancelled.
+function askText({ title, sub, label, placeholder, ok }) {
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'text', maxlength: '60', placeholder: placeholder || '', id: 'askInput' });
+    const done = (v) => { scrim.remove(); resolve(v); };
+    const scrim = h('div', { class: 'scrim', onclick: (e) => { if (e.target === scrim) done(null); } },
+      h('form', { class: 'dialog', id: 'askForm', onsubmit: (e) => { e.preventDefault(); done(input.value.trim()); } },
+        h('h2', { style: 'margin:0;font-size:22px;font-weight:500' }, title),
+        sub ? h('p', { class: 'sub' }, sub) : null,
+        h('label', { class: 'fld' }, h('span', {}, label), input),
+        h('div', { class: 'row end' },
+          h('button', { class: 'btn text', type: 'button', onclick: () => done(null) }, 'Batal'),
+          h('button', { class: 'btn filled', type: 'submit' }, ok))));
+    document.body.appendChild(scrim);
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
+// One step from a reviewed sheet to a live room (group mode), or back into
+// the room after fixing its sheet (room edit mode).
+async function studentAction() {
+  const btn = $('exportBtn');
+  btn.disabled = true;
+  try {
+    if (ROOM_EDIT) {
+      const r = await fetch('/api/room/sheet', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || 'HTTP ' + r.status);
+      location.href = '/';
+      return;
+    }
+    const label = await askText({ title: 'Buat ruang kelompok', sub: 'Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Jawaban tersimpan di ruang ini.',
+      label: 'Nama kelompok (boleh dikosongkan)', placeholder: 'mis. Kelompok 3', ok: 'Buat ruang' });
+    if (label === null) return;
+    const r = await fetch('/api/rooms/from-sheet?label=' + encodeURIComponent(label.trim()), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(r.status === 404 ? 'Server ini belum mendukung ruang dari PDF.' : (d.error || 'HTTP ' + r.status));
+    // The response set this browser's room session: the gate now serves
+    // the room. The code is shown there, in the tool bar, to share.
+    try { sessionStorage.setItem('esh-new-room', JSON.stringify(d.room)); } catch {}
+    location.href = '/';
+  } catch (e) {
+    snack('Gagal: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 let snackTimer = 0;
@@ -802,7 +864,12 @@ function init() {
   $('logoutBtn').addEventListener('click', async () => { amenu.hidden = true; await logout(); updatePublishItem(); renderCloudStart(); snack('Anda telah keluar.'); });
 
   const menu = $('exportMenu');
-  $('exportBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) menu.querySelector('button').focus(); });
+  $('exportBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (STUDENT) { studentAction(); return; }
+    menu.hidden = !menu.hidden;
+    if (!menu.hidden) menu.querySelector('button').focus();
+  });
   addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
   menu.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
@@ -837,10 +904,27 @@ function init() {
     if (d) { e.preventDefault(); commit(() => { hit.f.x = r1(hit.f.x + d[0]); hit.f.y = r1(hit.f.y + d[1]); }); }
   });
 
+  if (GROUP) {
+    document.querySelector('.drop h1').textContent = 'Buat ruang kelompok dari PDF guru';
+    document.querySelector('.drop p').textContent = 'Seret PDF lembar kerja ke sini, atau pilih berkas. Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Tidak perlu akun.';
+    $('openJsonBtn').hidden = true;
+    document.querySelector('.start-row .dot').hidden = true;
+  }
+  if (ROOM_EDIT) {
+    show('busy');
+    $('busyTitle').textContent = 'Membuka lembar ruang…';
+    fetch('/api/room/sheet', { credentials: 'same-origin', cache: 'no-store' }).then(async (r) => {
+      if (r.headers.get('X-Sheet-Editable') !== '1') throw new Error(r.status === 401 ? 'Masuk ke ruang dulu.' : 'Lembar ini dikelola guru, tidak bisa diubah dari ruang.');
+      openSheet(await r.json(), 'room-edit');
+    }).catch((e) => { show('start'); snack(e.message); });
+    return;
+  }
+
   // Reopen the sheet in the URL hash (a reload keeps you where you were).
   const key = decodeURIComponent(location.hash.slice(1));
-  const home = () => { showRecent(); renderCloudStart(); };
+  const home = () => { showRecent(); if (!GROUP) renderCloudStart(); };
   refreshMe().then(() => {
+    if (GROUP) { $('accountBtn').hidden = true; $('publishItem').hidden = true; return; }
     if (!$('start').hidden) renderCloudStart();
     updatePublishItem();
   });

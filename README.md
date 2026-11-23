@@ -14,7 +14,7 @@ Built for SMA Negeri 3 Yogyakarta, Bahasa Indonesia, *LKPD Teks Cerpen*. The arc
 - **Real-time collaboration.** Each group gets a private room. Answers sync live over WebSockets; the server is the source of truth, `localStorage` is only an offline cache.
 - **Server-side gate.** The worksheet HTML is never sent to a client without a valid session. There is no client-side "hide the content" trick.
 - **Self-service rooms.** Any group can create a room and receives a 6-character code. Codes are isolated: one group can never read or write another's work.
-- **Any PDF, not just this one.** The Studio (`/studio/`) imports a worksheet PDF in the browser, finds the answer areas, lets a teacher fix them, and publishes it to a project. Answers *grow*: a long answer pushes the rest of the page down instead of scrolling inside a box. Teachers get accounts, rooms per group and a live view of every group's answers; students still only need the code.
+- **Any PDF, not just this one.** The Studio (`/studio/`) imports a worksheet PDF in the browser, finds the answer areas, lets a teacher fix them, and publishes it to a project. Answers *grow*: a long answer pushes the rest of the page down instead of scrolling inside a box. Students can do it themselves: *Buat ruang dari PDF* turns the PDF the teacher sent into a group room with a code, no account. Teachers who want more get accounts, rooms per group and a live view of every group's answers; students still only need the code.
 - **An admin console.** A separate code opens a console listing every running room with live presence, answer previews, and reset/delete/report actions.
 - **Material 3 Expressive.** The application chrome (gate, tool bar, admin) follows M3 Expressive — official motion curves, the shape scale, connected button groups, and a circular wavy progress indicator.
 
@@ -158,6 +158,7 @@ The Studio and imported sheets have local suites that need no deployment (`npm c
 node tests/test-import.mjs     # importer on the demo PDF and the LKPD
 node tests/test-studio.mjs     # Studio end to end in headless Chrome
 ELKPD_URL=http://127.0.0.1:8802 node tests/test-projects.mjs   # accounts, projects, two students live
+ELKPD_URL=http://127.0.0.1:8802 node tests/test-student-rooms.mjs   # a student's PDF -> a room, no account
 ```
 
 ## Design notes

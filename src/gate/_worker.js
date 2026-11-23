@@ -231,7 +231,9 @@ async function gateHandler(request, env) {
     const session = await verifySession(secret, readCookie(request, COOKIE));
 
     /* ---------------- accounts + projects (#3): projects.js ---------------- */
-    const projectResponse = await projectsApi(request, env, url, session);
+    // Student rooms (#15) mint room sessions the same way /api/create does.
+    const issueRoomCookie = async (roomId) => sessionCookie(await makeSession(secret, roomId), url);
+    const projectResponse = await projectsApi(request, env, url, session, { issueRoomCookie });
     if (projectResponse) return projectResponse;
 
     /* ---------------- websocket ---------------- */
