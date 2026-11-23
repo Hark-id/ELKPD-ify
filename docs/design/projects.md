@@ -104,12 +104,12 @@ geometry in **PDF points**, origin top-left.
   "format": "elkpd-sheet", "version": 1,
   "title": "Ekosistem Kolam",
   "source": { "name": "kolam.pdf", "pages": 2, "sha256": "…" },
-  "fonts": [{ "family": "Gelasio", "url": "https://fonts.googleapis.com/…" }],
+  "fonts": { "g_d0_f1": { "css": "'Georgia', 'Gelasio', serif", "web": ["Gelasio"] } },
   "pages": [{
     "id": "p1", "width": 612, "height": 792,
     "background": "<svg …>",          // everything painted, minus text
     "text": [{ "id": "t1", "x": 72, "y": 90, "baseline": 101, "w": 210,
-               "font": "Gelasio", "weight": 700, "style": "normal",
+               "font": "g_d0_f1", "weight": 700, "style": "normal",
                "size": 14, "color": "#1b1b1f", "str": "Nama", "rot": 0 }],
     "fields": [{ "id": "nama", "kind": "text", "x": 120, "y": 88, "w": 300, "h": 16,
                  "label": "Nama", "placeholder": "", "grow": true, "lines": 1 }]
@@ -117,9 +117,20 @@ geometry in **PDF points**, origin top-left.
 }
 ```
 
-Field kinds: `text`, `textarea` (lined or boxed), `checkbox`, `choice`
-(radio group), `date`, `number`. Field ids are the answer keys in the room;
-they're stable across sheet versions so a re-published sheet keeps answers.
+Field kinds (v1): `text`, `textarea` (lined or boxed), `checkbox`, `date`,
+`number`. (A radio-group `choice` kind is left for a later version.) The
+authoritative format is `src/sheet/format.md`; this is a sketch of it.
+
+**Answer keys.** Field ids are the answer keys in the room, and they are
+stored, never derived from position: reordering pages or moving a field
+keeps its id. When a sheet is re-published:
+- a field that still exists keeps its answers;
+- a field that was **deleted** keeps its stored answer in the room, but the
+  player no longer shows it. If a field with the same id comes back, so
+  does the answer. Exports (CSV) list only the fields of the current sheet;
+- a field that was **added** starts empty in every room.
+Nothing is ever deleted from a room by a re-publish; only "Kosongkan"
+(reset) or deleting the room removes answers.
 
 ## Flexible layout: better than the paper
 
