@@ -30,7 +30,7 @@ Account ──owns / is shared──► Project ──has──► Sheet (versio
 |---|---|---|
 | **Account** | A person who *makes* worksheets: username + password. | Teachers, us. |
 | **Project** | One worksheet: its sheet, its rooms, who can edit it. | Owner + people they share it with. |
-| **Sheet** | The page content: background, text, fields. Produced by the importer, edited in the Studio. Versioned; a room is pinned to the version it was created with. | Everyone (rendered by the player). |
+| **Sheet** | The page content: background, text, fields. Produced by the importer, edited in the Studio. Versioned (last 5 kept); rooms always serve the latest version, so a teacher's fix reaches every group. Field ids are stable, so answers survive a re-publish. | Everyone (rendered by the player). |
 | **Room** | Unchanged from today: one Durable Object per group, answers + presence over WebSocket, joined with a 6-character code. | Students. **No account needed.** |
 
 The key decision: **students never need an account.** Classroom reality is
@@ -79,13 +79,12 @@ is the DO host; no new deployable):
 |---|---|---|
 | `AccountStore` (new) | 1, `idFromName("global")` | `users(id, username UNIQUE, pw, display_name, created_at, failures, locked_until)`, `memberships(user_id, project_id, role)` (an index: which projects can I see) |
 | `Project` (new) | 1 per project | `meta(key, value)`, `sheet_versions(version, created_at, created_by, size)`, `sheet_chunks(version, n, data)`, `members(user_id, role)`, `rooms(room_id, label, created_at)` |
-| `RoomRegistry` | unchanged | `rooms` gains `project_id TEXT NOT NULL DEFAULT 'lkpd-cerpen'`, `sheet_version INTEGER NOT NULL DEFAULT 0` |
+| `RoomRegistry` | unchanged | `rooms` gains `project_id TEXT NOT NULL DEFAULT 'lkpd-cerpen'` |
 | `WorksheetRoom` | unchanged | unchanged |
 
 - **Why chunks:** a DO SQLite value is capped at 2 MB; an imported sheet with
   images can be several MB. The sheet JSON is split into 1 MB chunks.
-  Hard cap per version: 16 MB. Old versions are kept while any room pins
-  them, then pruned.
+  Hard cap per version: 16 MB. The last 5 versions are kept.
 - **Why the membership index lives in `AccountStore`:** "list my projects"
   must not fan out to every project DO. The project DO is the source of
   truth for its members; `AccountStore.memberships` is a cache that the
@@ -168,9 +167,12 @@ render it.
 | `GET /api/account/me` | user | who am I, my projects |
 | `POST /api/projects` | user | create project (with sheet v1) |
 | `GET /api/projects/:id` | member | meta, members, rooms |
-| `GET /api/projects/:id/sheet?v=` | member, or room session pinned to it | sheet JSON |
+| `GET /api/projects/:id/sheet` | member | sheet JSON (latest) |
+| `GET /api/room/sheet` | room session | the sheet of the session's room |
 | `PUT /api/projects/:id/sheet` | editor | publish a new version |
 | `POST /api/projects/:id/rooms` | editor | create a room → code |
+| `POST /api/projects/:id/rooms/delete`, `…/rooms/reset` | editor | delete a room (frees its code) / clear its answers |
+| `POST /api/projects/:id/delete` | owner | delete the project, its rooms and their answers |
 | `POST /api/projects/:id/share` | owner | add/remove member, set role |
 | `GET /api/projects/:id/answers` | viewer | every room's answers (grading view) |
 | `GET /studio`, `/studio/:id` | user | the Studio app |
@@ -178,8 +180,9 @@ render it.
 
 The room flow is unchanged: `/api/login` with a code → room session. After
 login, if the room's `project_id` is the legacy `lkpd-cerpen`, the gate
-serves `worksheet.html` as today; otherwise it serves the **player** with
-the pinned sheet. `/api/create` (self-service rooms with no project) keeps
+serves `worksheet.html` as today; otherwise it serves the **player**
+(`src/sheet/room.html`), which loads `/api/room/sheet` and speaks the same
+WebSocket protocol to the same `WorksheetRoom`. `/api/create` (self-service rooms with no project) keeps
 creating LKPD rooms, so nothing about today's deployment changes.
 
 ## Migration
@@ -202,7 +205,8 @@ creating LKPD rooms, so nothing about today's deployment changes.
    to room sessions of non-legacy projects.
 4. **Teacher view:** answers per room, export (PDF via print, CSV).
 
-PR 1 can start now. PRs 2–4 wait for this doc's sign-off.
+Status: PR 1 is #13. PRs 2–3 are implemented as draft #14 (tested end to
+end on a local stack), waiting for this doc's sign-off before they land.
 
 ## Open questions for @Hark-id
 
