@@ -87,11 +87,18 @@ function nextFieldId(pg) {
 
 // --------------------------------------------------------- history
 let saveTimer = 0;
-function snapshot() { return JSON.stringify(sheet.pages.map((p) => ({ fields: p.fields, text: p.text }))).length < 4e6 ? JSON.stringify({ title: sheet.title, pages: sheet.pages.map((p) => ({ fields: p.fields, text: p.text })) }) : null; }
+// Snapshots hold what edits change (title, page order, fields, text), not
+// backgrounds: pages are restored from pagePool by id, so undoing a page
+// deletion brings the page back without copying its SVG into every entry.
+const pagePool = new Map();
+function snapshot() {
+  const snap = JSON.stringify({ title: sheet.title, pages: sheet.pages.map((p) => ({ id: p.id, fields: p.fields, text: p.text })) });
+  return snap.length < 4e6 ? snap : null;
+}
 function restore(snap) {
   const s = JSON.parse(snap);
   sheet.title = s.title;
-  s.pages.forEach((p, i) => { sheet.pages[i].fields = p.fields; sheet.pages[i].text = p.text; });
+  sheet.pages = s.pages.map((p) => Object.assign(pagePool.get(p.id), { fields: p.fields, text: p.text }));
 }
 /** Apply an edit. `rerender`: the player must be rebuilt (text changed). */
 function commit(fn, { rerender = false } = {}) {
@@ -180,6 +187,8 @@ async function importBytes(bytes, name) {
 function openSheet(s, key) {
   if (!s || s.format !== 'elkpd-sheet' || !Array.isArray(s.pages)) { snack('Berkas ini bukan berkas lembar yang valid.'); return; }
   sheet = s;
+  pagePool.clear();
+  for (const p of s.pages) pagePool.set(p.id, p);
   docKey = key || ((s.source && s.source.sha256) ? 'sha-' + s.source.sha256.slice(0, 16) : 'doc-' + Date.now());
   undo.length = redo.length = 0;
   selected = null;
@@ -433,9 +442,15 @@ function overviewPanel() {
       h('div', {}, h('b', {}, String(unnamed)), h('span', {}, 'tanpa nama'))),
   );
   if (unnamed) wrap.append(h('p', { class: 'tip' }, 'Beri nama setiap isian (mis. "Nama", "Jawaban no. 2"). Nama dipakai pembaca layar dan saat guru melihat jawaban.'));
+  const n = sheet.pages.length;
   sheet.pages.forEach((pg, pi) => {
+    const blank = !pg.fields.length && !pg.text.length;
+    wrap.append(h('div', { class: 'pagehead row-between' }, h('span', {}, `Halaman ${pi + 1}` + (blank ? ' (kosong)' : '')),
+      h('span', { class: 'page-acts' },
+        h('button', { type: 'button', title: 'Naikkan halaman', 'aria-label': `Naikkan halaman ${pi + 1}`, disabled: pi === 0, onclick: () => movePage(pi, -1) }, '↑'),
+        h('button', { type: 'button', title: 'Turunkan halaman', 'aria-label': `Turunkan halaman ${pi + 1}`, disabled: pi === n - 1, onclick: () => movePage(pi, 1) }, '↓'),
+        h('button', { type: 'button', title: 'Hapus halaman', 'aria-label': `Hapus halaman ${pi + 1}`, disabled: n === 1, onclick: () => deletePage(pi) }, '✕'))));
     if (!pg.fields.length) return;
-    wrap.append(h('div', { class: 'pagehead' }, `Halaman ${pi + 1}`));
     wrap.append(h('ul', { class: 'flist' }, pg.fields.map((f) => h('li', {}, h('button', { type: 'button', onclick: () => select(f.id, { scroll: true }) },
       h('span', { class: 'fl-k', 'aria-hidden': 'true' }, KIND_LETTER[f.kind] || '?'),
       h('span', { class: 'fl-l' + (f.label ? '' : ' fl-empty') }, f.label || 'Belum diberi nama'),
@@ -513,6 +528,15 @@ function previewPanel() {
       h('button', { class: 'btn tonal', type: 'button', onclick: () => { previewValues = {}; player.clear(); renderInspector(); } }, 'Kosongkan'),
       h('button', { class: 'btn text', type: 'button', onclick: () => window.print() }, 'Cetak')),
   );
+}
+
+function movePage(i, d) {
+  commit(() => { const [p] = sheet.pages.splice(i, 1); sheet.pages.splice(i + d, 0, p); }, { rerender: true });
+}
+function deletePage(i) {
+  const pg = sheet.pages[i];
+  commit(() => { sheet.pages.splice(i, 1); if (selected && pg.fields.some((f) => f.id === selected)) selected = null; }, { rerender: true });
+  snack(`Halaman ${i + 1} dihapus.`, { label: 'Urungkan', run: doUndo });
 }
 
 function duplicate(f, pg) {

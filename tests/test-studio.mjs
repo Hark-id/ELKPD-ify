@@ -67,6 +67,15 @@ try {
   await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
   check('Delete removes the selected field', await b.eval(`studio.sheet.pages[0].fields.filter(f => f.source === 'manual').length`) === 0);
 
+  // ---- pages: delete + undo, move
+  await b.eval(`[...document.querySelectorAll('.page-acts button')].find(x => x.getAttribute('aria-label') === 'Hapus halaman 2').click()`);
+  check('deleting a page removes it', await b.eval(`studio.sheet.pages.length`) === 1 && await b.eval(`document.querySelectorAll('.esh-page').length`) === 1);
+  await b.eval(`document.getElementById('undoBtn').click()`);
+  check('undo brings the page back with its fields', await b.eval(`studio.sheet.pages.length === 2 && studio.sheet.pages[1].fields.length === 14 && document.querySelectorAll('.esh-page').length === 2`));
+  await b.eval(`[...document.querySelectorAll('.page-acts button')].find(x => x.getAttribute('aria-label') === 'Turunkan halaman 1').click()`);
+  check('moving a page reorders the sheet', await b.eval(`studio.sheet.pages.map(p => p.id).join()`) === 'p2,p1');
+  await b.eval(`document.getElementById('undoBtn').click()`);
+
   // ---- preview: reflow pushes later content down
   await b.eval(`document.querySelector('[data-mode=preview]').click()`);
   await b.waitFor(`document.querySelector('.canvas.preview .esh-sheet')?.dataset.ready`);
