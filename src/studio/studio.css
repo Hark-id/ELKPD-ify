@@ -7,14 +7,14 @@
   --surface:#fff8f7; --surface-dim:#ead6d5; --surface-container-low:#fff0ef; --surface-container:#fceae9;
   --surface-container-high:#f6e4e3; --surface-container-highest:#f0dedd;
   --on-surface:#231919; --on-surface-variant:#534342; --outline:#857372; --outline-variant:#d8c2c0;
-  --error:#ba1a1a; --field:#1f6feb; --field-container:rgba(31,111,235,.10);
+  --error:#ba1a1a; --field:#00696f; --field-container:rgba(0,105,111,.10); /* teal, not OS blue (CONTRIBUTING) */
   --shape-xs:4px; --shape-sm:8px; --shape-md:12px; --shape-lg:16px; --shape-xl:28px; --shape-full:999px;
   --e-spatial:cubic-bezier(.42,1.67,.21,.90); --e-spatial-fast:cubic-bezier(.39,1.29,.35,.98);
   --e-effects:cubic-bezier(.34,.80,.34,1); --e-emphasized:cubic-bezier(.2,0,0,1);
   --d-fast:150ms; --d-med:300ms;
   color-scheme:light;
 }
-*{box-sizing:border-box}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0}
 body{font-family:"Roboto Flex","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--surface);color:var(--on-surface);
   -webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
@@ -125,9 +125,9 @@ main{flex:1;min-height:0;position:relative}
 .st-ov{position:absolute;inset:0;z-index:2}
 .drawing .st-ov{cursor:crosshair}
 .st-fb{position:absolute;border:1.5px solid var(--field);background:var(--field-container);border-radius:3px;cursor:move;touch-action:none}
-.st-fb:hover{background:rgba(31,111,235,.18)}
-.st-fb.sel{border-width:2px;box-shadow:0 0 0 3px rgba(31,111,235,.22);background:rgba(31,111,235,.16);z-index:2}
-.st-fb.lined{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--gap) - 1px),rgba(31,111,235,.35) calc(var(--gap) - 1px),rgba(31,111,235,.35) var(--gap))}
+.st-fb:hover{background:rgba(0,105,111,.18)}
+.st-fb.sel{border-width:2px;box-shadow:0 0 0 3px rgba(0,105,111,.22);background:rgba(0,105,111,.16);z-index:2}
+.st-fb.lined{background-image:repeating-linear-gradient(to bottom,transparent 0,transparent calc(var(--gap) - 1px),rgba(0,105,111,.35) calc(var(--gap) - 1px),rgba(0,105,111,.35) var(--gap))}
 .st-fb.kind-checkbox{border-radius:2px}
 .st-chip{position:absolute;left:-1.5px;bottom:100%;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   background:var(--field);color:#fff;font:600 8px/12px "Roboto Flex",Arial,sans-serif;padding:0 4px;border-radius:3px 3px 0 0;pointer-events:none;opacity:0;transition:opacity var(--d-fast)}
@@ -138,7 +138,7 @@ main{flex:1;min-height:0;position:relative}
 .st-h[data-h=sw]{left:0;top:100%;cursor:nesw-resize}.st-h[data-h=w]{left:0;top:50%;cursor:ew-resize}
 .st-band{position:absolute;border:1.5px dashed var(--primary);background:color-mix(in srgb,var(--primary) 8%,transparent);pointer-events:none}
 .st-pageno{position:absolute;left:0;top:-20px;font-size:12px;color:var(--on-surface-variant)}
-.preview .esh-f:focus{background:rgba(31,111,235,.12)}
+
 
 /* inspector */
 .insp h2{font-size:16px;font-weight:600;margin:4px 0 4px}

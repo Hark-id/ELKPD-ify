@@ -20,7 +20,10 @@
 
 const STYLE_ID = 'esh-player-style';
 const CSS = `
-.esh-sheet{--esh-accent:#1f6feb;--esh-ink:#0d2a57;--esh-tint:rgba(31,111,235,.07);--esh-page-gap:16px}
+/* Answer styling is deliberately not blue: CONTRIBUTING forbids anything
+   that reads as the OS focus/selection blue (tests/test-blue.mjs). Slate,
+   like the hand-built worksheet's fields. */
+.esh-sheet{--esh-accent:#334155;--esh-ink:#1e293b;--esh-tint:rgba(71,85,105,.07);--esh-page-gap:16px}
 .esh-pw{position:relative;margin:0 auto var(--esh-page-gap)}
 .esh-page{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18);overflow:hidden}
 .esh-strip{position:absolute;left:0;overflow:hidden;pointer-events:none}
@@ -32,15 +35,15 @@ const CSS = `
   -webkit-tap-highlight-color:transparent;transition:box-shadow .15s}
 textarea.esh-f{padding:2px 3px;line-height:1.35;overflow:hidden}
 textarea.esh-f.esh-lined{background:transparent;padding:0 2px}
-.esh-f:focus-visible{box-shadow:0 0 0 2px var(--esh-accent)}
-.esh-f::selection{background:rgba(31,111,235,.25)}
+.esh-f:focus,.esh-f:focus-visible{box-shadow:0 0 0 1.5px var(--esh-accent),0 0 0 4px rgba(15,23,42,.07);background:rgba(255,255,255,.85)}
+.esh-f::selection{background:rgba(30,41,59,.18)}
 input.esh-f[type=checkbox]{padding:0;accent-color:var(--esh-accent);cursor:pointer;background:transparent}
 .esh-f[data-peer]{box-shadow:0 0 0 2px var(--peer-color,#e8710a)}
 .esh-peer-flag{position:absolute;transform:translateY(-100%);font:600 10px/1.4 'Arimo',Arial,sans-serif;color:#fff;
   background:var(--peer-color,#e8710a);padding:0 5px;border-radius:4px 4px 4px 0;white-space:nowrap;pointer-events:none;z-index:2}
 .esh-sheet.esh-bare .esh-f{background:transparent}
 .esh-sheet[data-readonly] .esh-f{pointer-events:none}
-.esh-f.esh-editing{box-shadow:0 0 0 2px var(--esh-accent);background:rgba(31,111,235,.16)}
+.esh-f.esh-editing{box-shadow:0 0 0 2px var(--esh-accent);background:rgba(71,85,105,.14)}
 .esh-ed{position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff8f7;border-radius:20px 20px 0 0;box-shadow:0 -4px 16px rgba(0,0,0,.18);
   padding:12px 16px calc(12px + env(safe-area-inset-bottom));font-family:'Roboto Flex',Roboto,Arial,sans-serif;color:#231919;
   transform:translateY(110%);transition:transform .3s cubic-bezier(.2,0,0,1)}
