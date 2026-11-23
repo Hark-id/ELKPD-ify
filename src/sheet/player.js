@@ -136,7 +136,6 @@ export function createPlayer(container, sheet, opts = {}) {
   if (opts.readOnly) root.dataset.readonly = '';
   container.appendChild(root);
 
-  const blobUrls = [];
   const fieldEls = new Map(); // id -> element
   // phone answer editor state (see openEditor)
   const order = [];       // field defs in reading order
@@ -160,8 +159,11 @@ export function createPlayer(container, sheet, opts = {}) {
     page.appendChild(bg);
     let bgUrl = null;
     if (pg.background) {
-      bgUrl = URL.createObjectURL(new Blob([pg.background], { type: 'image/svg+xml' }));
-      blobUrls.push(bgUrl);
+      // A data: URL, not a blob: one. A sheet can come from someone else,
+      // and a blob URL is same-origin: opened as a document (not as an
+      // <img>) its SVG could run script with this page's cookies. A data:
+      // document gets an opaque origin, and as an <img> neither runs script.
+      bgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(pg.background);
     }
 
     const tl = doc.createElement('div');
@@ -526,7 +528,6 @@ export function createPlayer(container, sheet, opts = {}) {
       if (editor.el) { editor.el.remove(); const vv = doc.defaultView.visualViewport; if (vv && editor.onVV) vv.removeEventListener('resize', editor.onVV); }
       cancelAnimationFrame(refitRaf);
       cancelAnimationFrame(raf);
-      blobUrls.forEach((u) => URL.revokeObjectURL(u));
       container.textContent = '';
     },
   };
