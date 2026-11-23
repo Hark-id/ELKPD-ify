@@ -2,6 +2,9 @@
  * two acceptance PDFs from the #2 spike: the generated demo sheet and the
  * LKPD in reference/. Guards field detection, the dotted-border compaction
  * and the sheet format. Needs `npm ci` in scripts/pdf-import (pdfjs-dist).
+ * With a Chrome available it also prints and imports the layout corpus in
+ * tests/fixtures/make-corpus.mjs (those checks are skipped with a note
+ * when there is none).
  *
  *   node tests/test-import.mjs                                         */
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -54,6 +57,49 @@ for (const s of [lkpd]) {
   check('backgrounds are standalone SVG', s.pages.every((p) => p.background.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')));
   check('no script in backgrounds', s.pages.every((p) => !/<script|on\w+=/i.test(p.background)));
   check('every text run references a known font', s.pages.every((p) => p.text.every((t) => s.fonts[t.font])));
+}
+
+// ---- layout corpus (tests/fixtures/make-corpus.mjs): six worksheets printed
+// by headless Chrome, each with its intended answer areas marked in the HTML.
+// Needs a Chrome binary; without one these checks are skipped, not failed.
+{
+  const { buildCorpus, score } = await import('./fixtures/make-corpus.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'elkpd-corpus-'));
+  let built = null;
+  try { built = await buildCorpus(dir); }
+  catch (e) {
+    if (!/No Chrome/.test(e.message)) throw e;
+    console.log('SKIP  corpus checks: no Chrome/Chromium found (set CHROME_PATH to run them)');
+  }
+  try {
+    for (const c of built || []) {
+      const sheet = await importPdf(pdfjs, readFileSync(c.pdf), { name: c.name + '.pdf', docOptions });
+      const fields = sheet.pages.flatMap((p) => p.fields);
+      const r = score(fields, c.truth);
+      const note = `intended ${r.intended}, detected ${r.detected}, matched ${r.tp}`;
+      check(`corpus ${c.name}: every intended field found`, r.recall === 1, note);
+      // Known extra in a-word-lines: a "Jawab :" label on the first ruled
+      // line splits that answer into a text field plus a 2-line textarea.
+      check(`corpus ${c.name}: no spurious fields`, r.extra.length <= (c.name === 'a-word-lines' ? 1 : 0), note);
+      if (c.name === 'b-multiple-choice') {
+        // Option glyphs typed as text (☐ ○), drawn squares, and squares
+        // alone in the cells of a Benar/Salah table are all checkboxes.
+        check('corpus b: 28 checkboxes, 2 text leaders', fields.filter((f) => f.kind === 'checkbox').length === 28 && fields.filter((f) => f.kind === 'text').length === 2);
+        check('corpus b: glyph options are labelled by their text', ['Venus', 'Merkurius', 'Bulan', 'Cincin'].every((l) => fields.some((f) => f.kind === 'checkbox' && f.label === l)));
+        check('corpus b: table checkboxes are labelled row - column', fields.some((f) => f.kind === 'checkbox' && f.label === 'Mars dijuluki planet merah. - Salah'));
+        check('corpus b: no text field left in a checkbox cell', !fields.some((f) => f.source === 'table'));
+      }
+      if (c.name === 'f-dotted-rounded') {
+        // Dotted/dashed rounded borders (filled dot paths), a stroked
+        // rounded box with a heading, a borderless rounded fill; the
+        // rounded callout full of text is not a field.
+        check('corpus f: 6 answer boxes + 1 leader', fields.filter((f) => f.source === 'box' && f.kind === 'textarea').length === 6 && fields.filter((f) => f.source === 'leader').length === 1);
+        const refl = fields.find((f) => f.label === 'Refleksi');
+        const area = c.truth.find((t) => refl && t.y < refl.y && t.y + t.h > refl.y);
+        check('corpus f: box under a heading starts below the heading', !!refl && !!area && refl.y - area.y > 12);
+      }
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall import checks passed');

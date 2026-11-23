@@ -290,12 +290,13 @@ async function extractPage(page, pageNo) {
     const m = st.ctm;
     const d = [];
     const pts = [];
+    const starts = []; // index into pts where each subpath begins
     let i = 0, cx = 0, cy = 0, sx = 0, sy = 0;
     const P = (x, y) => { const q = apply(m, x, y); pts.push(q); return r2(q[0]) + ' ' + r2(q[1]); };
     let segs = 0, onlyLines = true;
     for (const op of subOps) {
       switch (op) {
-        case OPS.moveTo: cx = sx = coords[i++]; cy = sy = coords[i++]; d.push('M' + P(cx, cy)); break;
+        case OPS.moveTo: starts.push(pts.length); cx = sx = coords[i++]; cy = sy = coords[i++]; d.push('M' + P(cx, cy)); break;
         case OPS.lineTo: cx = coords[i++]; cy = coords[i++]; d.push('L' + P(cx, cy)); segs++; break;
         case OPS.curveTo: {
           const [a, b, c, e, x, y] = coords.slice(i, i + 6); i += 6;
@@ -312,13 +313,15 @@ async function extractPage(page, pageNo) {
         case OPS.closePath: d.push('Z'); cx = sx; cy = sy; break;
         case OPS.rectangle: {
           const [x, y, w, h] = coords.slice(i, i + 4); i += 4;
+          starts.push(pts.length);
           d.push('M' + P(x, y) + 'L' + P(x + w, y) + 'L' + P(x + w, y + h) + 'L' + P(x, y + h) + 'Z');
           cx = sx = x; cy = sy = y; segs += 4; break;
         }
         default: break;
       }
     }
-    if (!cur) cur = { d: [], pts: [], subOps: [], segs: 0, onlyLines: true };
+    if (!cur) cur = { d: [], pts: [], starts: [], subOps: [], segs: 0, onlyLines: true };
+    for (const k of starts) cur.starts.push(cur.pts.length + k);
     cur.d.push(...d); cur.pts.push(...pts); cur.subOps.push(...subOps); cur.segs += segs;
     cur.onlyLines = cur.onlyLines && onlyLines;
   }
@@ -342,8 +345,46 @@ async function extractPage(page, pageNo) {
     // edges, true for rects and rounded rects, false for illustration shapes.
     const near = (v, a, b) => Math.abs(v - a) < 1.5 || Math.abs(v - b) < 1.5;
     const onEdge = p.pts.filter((q) => near(q[0], bbox[0], bbox[2]) || near(q[1], bbox[1], bbox[3])).length;
-    const boxy = !!rect || onEdge >= 0.85 * p.pts.length;
-    return { d: p.d.join(''), bbox, rect, line, boxy, closed: p.d.includes('Z') || !!rect, subCount: p.subOps.length };
+    // Rounded boxes fail that test once the radius is more than a couple of
+    // points: Skia flattens each corner arc into several curves whose points
+    // sit well inside the bbox. So also accept an outline whose points all
+    // stay in a band along the bbox perimeter AND whose points on each side
+    // span most of that side (the straight part between two corners). The
+    // second half is what keeps circles and ellipses out: their points touch
+    // a side only around its middle (~55% with the usual 4-curve circle).
+    const bw = bbox[2] - bbox[0], bh = bbox[3] - bbox[1];
+    const band = Math.min(20, 0.25 * Math.min(bw, bh));
+    const side = [[Infinity, -Infinity], [Infinity, -Infinity], [Infinity, -Infinity], [Infinity, -Infinity]]; // top, bottom, left, right
+    const grow = (r, v) => { if (v < r[0]) r[0] = v; if (v > r[1]) r[1] = v; };
+    let inBand = bw > 4 && bh > 4;
+    for (const q of p.pts) {
+      const dx = Math.min(q[0] - bbox[0], bbox[2] - q[0]), dy = Math.min(q[1] - bbox[1], bbox[3] - q[1]);
+      if (Math.min(dx, dy) > band) { inBand = false; break; }
+      if (q[1] - bbox[1] < 1.5) grow(side[0], q[0]);
+      if (bbox[3] - q[1] < 1.5) grow(side[1], q[0]);
+      if (q[0] - bbox[0] < 1.5) grow(side[2], q[1]);
+      if (bbox[2] - q[0] < 1.5) grow(side[3], q[1]);
+    }
+    const outline = inBand && side.every((r, k) => r[1] - r[0] >= 0.7 * (k < 2 ? bw : bh));
+    const boxy = !!rect || onEdge >= 0.85 * p.pts.length || outline;
+    // "Frame": an outline made of many small pieces, which is how Skia/
+    // Chrome paints a dotted or dashed border (one FILLED compound path, a
+    // subpath per dot, rounded corners included). The fill colour is the
+    // border's colour, not the colour of the area inside it.
+    let frame = false;
+    if (outline && p.starts.length >= 8) {
+      const maxPiece = Math.max(6, 0.25 * Math.min(bw, bh));
+      frame = true;
+      for (let k = 0; k < p.starts.length && frame; k++) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let j = p.starts[k], e = k + 1 < p.starts.length ? p.starts[k + 1] : p.pts.length; j < e; j++) {
+          const q = p.pts[j];
+          if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1];
+        }
+        if (x1 - x0 > maxPiece || y1 - y0 > maxPiece) frame = false;
+      }
+    }
+    return { d: p.d.join(''), bbox, rect, line, boxy, frame, closed: p.d.includes('Z') || !!rect, subCount: p.subOps.length };
   }
 
   function paint(fill, stroke, rule) {
@@ -355,7 +396,7 @@ async function extractPage(page, pageNo) {
     if (!p || (!fill && !stroke)) return;
     const s = st.ctm;
     const sh = {
-      type: 'path', d: p.d, bbox: p.bbox.map(r2), rect: p.rect, line: p.line, closed: p.closed, boxy: p.boxy, subCount: p.subCount,
+      type: 'path', d: p.d, bbox: p.bbox.map(r2), rect: p.rect, line: p.line, closed: p.closed, boxy: p.boxy, frame: p.frame, subCount: p.subCount,
       fill: fill ? (st.fillPat ? `url(#${st.fillPat})` : hex(st.fill)) : null,
       fillRule: rule, fa: st.fa,
       stroke: stroke ? (st.strokePat ? `url(#${st.strokePat})` : hex(st.stroke)) : null,
@@ -670,6 +711,9 @@ function mergeGlyphs(glyphs, fonts) {
 }
 
 // ----------------------------------------------------------- field finder
+// Empty tick-box characters: ballot box, white squares (incl. the shadowed
+// ❏..❒ dingbats), white circles. Deliberately not "o"/"O" or bullets.
+const TICK_GLYPH = '[\\u2610\\u25A1\\u25A2\\u25FB\\u25FD\\u2B1C\\u274F-\\u2752\\u25CB\\u25EF\\u26AA\\u2B58]';
 // Heuristics, most specific first. Every field gets a stable id
 // (p<page>-f<n>) in reading order so the rooms layer can bind to it.
 function detectFields(pg) {
@@ -812,14 +856,44 @@ function detectFields(pg) {
     }
   }
 
-  // 3b. Checkboxes: small, empty, square boxes with text just to the right.
+  // 3b. Checkboxes: small, empty, square boxes with text just to the right,
+  //     or alone in an otherwise empty table cell (a "Benar | Salah" or
+  //     "Ya | Tidak" grid: the label is the row and the column header, there
+  //     is nothing to the right). The cell's own text field loses to the
+  //     checkbox in the de-duplication below.
   for (const sh of shapes) {
     if (sh.type !== 'path' || !sh.closed || !sh.boxy || !sh.stroke) continue;
     const [x0, y0, x1, y1] = sh.bbox, w = x1 - x0, h = y1 - y0;
     if (w < 6 || w > 16 || Math.abs(w - h) > 2) continue;
     if (textIn(sh.bbox).length) continue;
     const label = spans.find((s) => !s.angle && s.x > x1 && s.x - x1 < 15 && s.baseline > y0 && s.baseline - s.size * 0.7 < y1);
-    if (label) cands.push({ src: 'checkbox', kind: 'checkbox', box: [x0, y0, x1, y1], prio: 1, name: label.text });
+    if (label) { cands.push({ src: 'checkbox', kind: 'checkbox', box: [x0, y0, x1, y1], prio: 1, name: label.text }); continue; }
+    const cell = tableCells.find((c) => x0 >= c[0] && x1 <= c[2] && y0 >= c[1] && y1 <= c[3] && !textIn(c, -1).length);
+    if (cell) cands.push({ src: 'checkbox', kind: 'checkbox', box: [x0, y0, x1, y1], prio: 1, name: tableLabel(cell, spans, tableCells) });
+  }
+  // 3c. Checkboxes typed as text: Word and Docs worksheets put an empty
+  //     box or circle character in front of each option ("☐ Venus"). Only
+  //     the empty forms count; ticked or filled ones (☑ ☒ ●) are content.
+  //     The label is the text up to the next option on the same line.
+  for (const s of spans) {
+    if (s.angle || s.alpha < 0.5) continue;
+    const re = new RegExp(TICK_GLYPH, 'g');
+    let m;
+    while ((m = re.exec(s.text))) {
+      const i = m.index, n = m[0].length;
+      const gx0 = s.x + (s.charX[i] ?? 0);
+      const gx1 = i + n < s.charX.length ? s.x + s.charX[i + n] : s.x + s.width;
+      // A glyph with no advance (unmapped in the font) leaves nothing to tick.
+      if (gx1 - gx0 < 0.3 * s.size) continue;
+      const rest = s.text.slice(i + n).split(new RegExp(TICK_GLYPH))[0].trim();
+      // A lone glyph only counts with a label right after it in another
+      // run; "□" on its own is as likely a bullet or a missing-glyph box.
+      const next = rest ? null : spans.find((o) => o !== s && !o.angle && Math.abs(o.baseline - s.baseline) < 0.4 * s.size && o.x >= gx1 - 1 && o.x - gx1 < 1.5 * s.size);
+      if (!rest && !next) continue;
+      const side = Math.min(gx1 - gx0, s.size);
+      cands.push({ src: 'checkbox', kind: 'checkbox', box: [gx0, s.baseline - 0.9 * s.size, gx0 + side, s.baseline - 0.9 * s.size + side], prio: 1,
+        name: (rest || next.text.split(new RegExp(TICK_GLYPH))[0].trim()).slice(0, 80) });
+    }
   }
 
   // 4. Empty boxes: closed shapes big enough to write in whose interior is
@@ -827,7 +901,8 @@ function detectFields(pg) {
   //    fills are skipped: nobody writes on a dark panel, but illustrations
   //    are full of dark closed shapes.
   const lum = (h) => { const n = parseInt(h.slice(1), 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; };
-  const dark = shapes.filter((sh) => sh.type === 'path' && sh.fill && (sh.fill.startsWith('url') || lum(sh.fill) < 0.6)).map((sh) => sh.bbox);
+  // (A dotted border is a dark *fill* too, but only along the outline.)
+  const dark = shapes.filter((sh) => sh.type === 'path' && sh.fill && !sh.frame && (sh.fill.startsWith('url') || lum(sh.fill) < 0.6)).map((sh) => sh.bbox);
   const sameBox = (a, b) => a.every((v, k) => Math.abs(v - b[k]) < 3);
   const boxes = shapes.filter((sh) => sh.type === 'path' && sh.closed && sh.boxy && !sh.shading && (sh.fill || sh.stroke))
     .map((sh) => sh.bbox)
