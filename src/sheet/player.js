@@ -69,14 +69,18 @@ function loadWebFonts(doc, sheet) {
   fams.add('Arimo'); // answer font
   const href = 'https://fonts.googleapis.com/css2?' +
     [...fams].map((f) => 'family=' + f.replace(/ /g, '+') + ':ital,wght@0,400;0,700;1,400;1,700').join('&') + '&display=block';
+  // The load promise lives on the <link>: a second player created while
+  // the stylesheet is still in flight must wait for it too, or it asks for
+  // faces whose @font-face rules don't exist yet and gets nothing.
   let link = [...doc.querySelectorAll('link[rel=stylesheet]')].find((l) => l.href === href);
-  const sheetLoaded = link ? Promise.resolve() : new Promise((resolve) => {
+  if (!link) {
     link = doc.createElement('link');
     link.rel = 'stylesheet';
     link.href = href;
-    link.onload = link.onerror = () => resolve();
+    link._eshLoaded = new Promise((resolve) => { link.onload = link.onerror = () => resolve(); });
     doc.head.appendChild(link);
-  });
+  }
+  const sheetLoaded = link._eshLoaded || Promise.resolve();
   if (!doc.fonts || !doc.fonts.load) return sheetLoaded;
   const faces = [];
   for (const fam of fams) for (const v of ['400', '700', 'italic 400', 'italic 700']) faces.push(`${v} 16px "${fam}"`);
@@ -312,16 +316,17 @@ export function createPlayer(container, sheet, opts = {}) {
       const base = b.offsetTop;
       el._dy = t.size - base; // baseline sits `size` below the box top in PDF space
       const w = el.offsetWidth;
-      let k = w > 0 && t.w > 0 ? t.w / w : 1;
+      let k = w > 0 && t.w > 0 ? t.w / w : 1; // edited runs drop `w`: natural width
       if (k < 0.5 || k > 2) k = 1;
       el.style.transformOrigin = `0 ${base}px`;
       el.style.transform = (t.rot ? `rotate(${t.rot}deg) ` : '') + `scaleX(${k.toFixed(4)})`;
     }
   }
 
+  let fixedScale = opts.scale || null;
   function fit(p, H) {
     const avail = Math.max(200, root.clientWidth || container.clientWidth || p.pg.width);
-    const k = Math.min(maxScale, avail / p.pg.width);
+    const k = fixedScale || Math.min(maxScale, avail / p.pg.width);
     p.scale = k;
     p.pw.style.width = r2(p.pg.width * k) + 'px';
     p.pw.style.height = r2(H * k) + 'px';
@@ -339,7 +344,16 @@ export function createPlayer(container, sheet, opts = {}) {
     pages.forEach(layout);
   }
   relayoutAll();
-  fontsReady.then(() => { relayoutAll(); root.dataset.ready = '1'; });
+  // Refit whenever a face finishes loading too: a face can land after
+  // "ready" (another player on the page started it, or a fallback face
+  // was swapped late), and a fit against the wrong face is visibly off.
+  let refitRaf = 0;
+  const refit = () => { cancelAnimationFrame(refitRaf); refitRaf = requestAnimationFrame(relayoutAll); };
+  if (doc.fonts && doc.fonts.addEventListener) doc.fonts.addEventListener('loadingdone', refit);
+  fontsReady.then(() => {
+    relayoutAll();
+    requestAnimationFrame(() => { relayoutAll(); root.dataset.ready = '1'; });
+  });
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(schedule) : null;
   if (ro) ro.observe(container);
 
@@ -385,8 +399,13 @@ export function createPlayer(container, sheet, opts = {}) {
       flags.set(peerId, { flag, el });
     },
     relayout: relayoutAll,
+    /** Fixed zoom (1 = 1pt per CSS px), or null to fit the container. */
+    setScale(k) { fixedScale = k || null; pages.forEach(layout); },
+    get scale() { return pages[0] ? pages[0].scale : 1; },
     destroy() {
       if (ro) ro.disconnect();
+      if (doc.fonts && doc.fonts.removeEventListener) doc.fonts.removeEventListener('loadingdone', refit);
+      cancelAnimationFrame(refitRaf);
       cancelAnimationFrame(raf);
       blobUrls.forEach((u) => URL.revokeObjectURL(u));
       container.textContent = '';
