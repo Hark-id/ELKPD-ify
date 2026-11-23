@@ -188,6 +188,36 @@ main{flex:1;min-height:0;position:relative}
   font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.25);z-index:50;max-width:min(560px,calc(100% - 32px));display:flex;gap:16px;align-items:center}
 .snackbar button{border:0;background:transparent;color:#ffb3b3;font-weight:600;padding:0}
 
+.avatar{width:40px;height:40px;border-radius:50%;border:0;background:var(--primary-container);color:var(--on-primary-container);font-weight:600;font-size:15px;flex:none}
+.menu-head{margin:4px 16px 8px;font-size:13px;color:var(--on-surface-variant)}
+#accountMenu{min-width:220px}
+.cloud-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px}
+.cloud-head h2{margin:0 0 0 8px}
+.cloud-note{font-size:13px;color:var(--on-surface-variant);margin:0 8px 8px}
+.r-role{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--primary);background:var(--primary-container);border-radius:6px;padding:2px 6px}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.32);display:grid;place-items:center;padding:16px;z-index:40}
+.dialog{width:min(420px,100%);background:var(--surface-container-low);border-radius:var(--shape-xl);padding:24px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.dialog .sub{font-size:13px;color:var(--on-surface-variant);margin:16px 0;line-height:18px}
+.auth-seg button{flex:1}
+.auth-seg{width:100%}
+.row.end{justify-content:flex-end;margin-top:8px}
+.form-err{color:var(--error);font-size:13px;margin:0 2px 8px}
+.room-card{border:1px solid var(--outline-variant);border-radius:var(--shape-md);padding:12px;margin:0 0 8px;background:#fff;cursor:pointer;transition:border-color var(--d-fast),background var(--d-fast)}
+.room-card:hover{background:var(--surface-container-low)}
+.room-card.sel{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+.room-card .rc-top{display:flex;align-items:center;gap:8px}
+.room-card .rc-label{flex:1;font-weight:600;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-card code{font:600 15px/1 ui-monospace,Consolas,monospace;letter-spacing:.1em;color:var(--primary)}
+.room-card .rc-meta{font-size:12px;color:var(--on-surface-variant);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}
+.live{display:inline-flex;align-items:center;gap:4px}
+.live::before{content:"";width:7px;height:7px;border-radius:50%;background:#146c2e}
+.live.off::before{background:var(--outline-variant)}
+.progress{height:4px;border-radius:2px;background:var(--surface-container-highest);margin-top:8px;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--primary);border-radius:2px}
+.member{display:flex;align-items:center;gap:8px;padding:6px 2px;font-size:14px}
+.member b{flex:1;font-weight:500}
+.member select{height:32px;border:1px solid var(--outline-variant);border-radius:var(--shape-xs);background:#fff;font-size:13px}
+.empty-canvas{max-width:420px;margin:80px auto;text-align:center;color:var(--on-surface-variant);font-size:15px;line-height:22px}
 @media (max-width:840px){
   .workspace{flex-direction:column}
   .inspector{width:auto;border-left:0;border-top:1px solid var(--outline-variant);max-height:42vh}

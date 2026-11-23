@@ -1,5 +1,6 @@
 import { LANDING_HTML } from "./landing.js";
 import { ADMIN_HTML } from "./admin.js";
+import { projectsApi, LEGACY_PROJECT } from "./projects.js";
 
 /* ------------------------------------------------------------------
    Group worksheet — access gate + real-time collaboration
@@ -229,6 +230,10 @@ async function gateHandler(request, env) {
     /* ---------------- resolve session ---------------- */
     const session = await verifySession(secret, readCookie(request, COOKIE));
 
+    /* ---------------- accounts + projects (#3): projects.js ---------------- */
+    const projectResponse = await projectsApi(request, env, url, session);
+    if (projectResponse) return projectResponse;
+
     /* ---------------- websocket ---------------- */
     if (url.pathname === "/ws") {
       if (!session || session.roomId === "admin-console") return new Response("unauthorized", { status: 401 });
@@ -335,20 +340,24 @@ async function gateHandler(request, env) {
     }
 
     /* ---------------- authenticated: the worksheet ---------------- */
-    const asset = await env.ASSETS.fetch(new URL("/worksheet.html", url));
-    let html = await asset.text();
-
     // Resolve this room's own name/code from the registry so every
     // group sees its own identity, never the deployment defaults.
     let label = env.ROOM_LABEL || "Kelompok";
     let code = "";
+    let projectId = LEGACY_PROJECT;
     try {
       const info = await (await registry()).fetch("https://registry/by-room", {
         method: "POST",
         body: JSON.stringify({ roomId: session.roomId }),
       }).then(r => r.json());
-      if (info.ok) { label = info.label; code = info.code; }
+      if (info.ok) { label = info.label; code = info.code; projectId = info.projectId || LEGACY_PROJECT; }
     } catch { /* fall back to the deployment default label */ }
+
+    // A project room serves the project's imported sheet in the player
+    // (src/sheet/room.html); every other room keeps the hand-built LKPD.
+    const page = projectId === LEGACY_PROJECT ? "/worksheet.html" : "/sheet/room.html";
+    const asset = await env.ASSETS.fetch(new URL(page, url));
+    let html = await asset.text();
 
     // Room scoping is injected server-side so the client cannot claim
     // a different room than the one its session was signed for.

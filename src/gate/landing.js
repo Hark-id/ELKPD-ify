@@ -408,6 +408,15 @@ export const LANDING_HTML = `<!DOCTYPE html>
     };
     codeInput.addEventListener('input', upperCode);
     codeInput.addEventListener('blur', upperCode);
+    /* join links (/j/CODE redirect here as ?code=CODE): fill the code in
+       so the student only presses the button */
+    try {
+      var linked = new URLSearchParams(location.search).get('code');
+      if (linked && /^[A-Za-z0-9 -]{1,20}$/.test(linked)) {
+        codeInput.value = linked.toUpperCase();
+        history.replaceState(null, '', location.pathname);
+      }
+    } catch (e) { /* old browser: type it */ }
   }
   var indicator = document.querySelector('.indicator');
   var tabsBox = document.querySelector('.tabs');
