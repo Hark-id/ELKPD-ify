@@ -61,6 +61,19 @@ await stranger('/api/account/register', { method: 'POST', body: JSON.stringify({
 check('another account cannot open the project', (await stranger(`/api/projects/${pid}`)).status === 404);
 check('another account cannot read its answers', (await stranger(`/api/projects/${pid}/answers`)).status === 404);
 
+// sharing: a viewer grades but gets no room codes; nobody becomes a second owner
+const sname = user + 'x';
+check('the owner can share with a viewer', (await teacher(`/api/projects/${pid}/share`, { method: 'POST', body: JSON.stringify({ username: sname, role: 'viewer' }) })).body.ok === true);
+const asViewer = await stranger(`/api/projects/${pid}`);
+check('a viewer can open the project', asViewer.body.ok && asViewer.body.role === 'viewer');
+check('a viewer does not see room codes', asViewer.body.project.rooms.length === 1 && !('code' in asViewer.body.project.rooms[0]));
+check("a viewer's answers view has no codes either", (await stranger(`/api/projects/${pid}/answers`)).body.rooms.every((r) => !('code' in r)));
+check('a viewer cannot create rooms', (await stranger(`/api/projects/${pid}/rooms`, { method: 'POST', body: '{}' })).status === 403);
+await teacher(`/api/projects/${pid}/share`, { method: 'POST', body: JSON.stringify({ username: sname, role: ['owner'] }) });
+check('a role smuggled as ["owner"] does not make an owner', (await stranger(`/api/projects/${pid}`)).status === 404);
+const csrf = await teacher('/api/projects', { method: 'POST', headers: { Origin: 'https://evil.example' }, body: JSON.stringify(sheet) });
+check('a cross-origin POST is refused', csrf.status === 403);
+
 const joinRes = await stranger(`/j/${code}`);
 check('join link redirects to the gate with the code', joinRes.status === 302 && (joinRes.headers.get('location') || '').endsWith('?code=' + code));
 

@@ -192,8 +192,9 @@ try {
 }
 
 if (sheet) {
-  document.title = sheet.title + ' · ' + LABEL;
-  $('title').textContent = sheet.title;
+  const sheetTitle = sheet.title || 'Lembar kerja';
+  document.title = sheetTitle + ' · ' + LABEL;
+  $('title').textContent = sheetTitle;
   let cached = {};
   try { cached = JSON.parse(store.get(CACHE_KEY) || '{}'); } catch {}
 

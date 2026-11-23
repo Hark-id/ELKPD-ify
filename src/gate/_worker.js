@@ -361,10 +361,12 @@ async function gateHandler(request, env) {
 
     // Room scoping is injected server-side so the client cannot claim
     // a different room than the one its session was signed for.
+    // Function replacers: a string replacement honours $-patterns, so a
+    // label like "$`" would splice the page into itself.
     html = html
-      .replaceAll("__ROOM_ID__", escHtml(session.roomId))
-      .replaceAll("__ROOM_LABEL__", escHtml(label))
-      .replaceAll("__ROOM_CODE__", escHtml(code));
+      .replaceAll("__ROOM_ID__", () => escHtml(session.roomId))
+      .replaceAll("__ROOM_LABEL__", () => escHtml(label))
+      .replaceAll("__ROOM_CODE__", () => escHtml(code));
 
     return new Response(html, {
       headers: {

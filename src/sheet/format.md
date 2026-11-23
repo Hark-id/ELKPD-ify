@@ -45,7 +45,7 @@ All geometry is in **PDF points, origin top-left**. A page renders at
 
 ## Rules a consumer can rely on
 
-- `background` is shown as an **image** (`<img src=blob:…svg>`), never
+- `background` is shown as an **image** (`<img src="data:image/svg+xml,…">`), never
   inlined into the page DOM. SVG in an image context runs no script and
   loads nothing external, so a sheet from someone else can't inject code
   through it. Keep it that way.

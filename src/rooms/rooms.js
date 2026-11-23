@@ -101,8 +101,13 @@ export class WorksheetRoom {
 
     if (msg.type === "edit") {
       const field = String(msg.field || "").slice(0, 80);
-      const value = String(msg.value ?? "");
+      /* one answer is at most 20k characters: a room's answers are sent
+         whole to every member and aggregated for the teacher's view */
+      const value = String(msg.value ?? "").slice(0, 20000);
       if (!field) return;
+      /* a room holds one sheet's answers; refuse to grow without bound */
+      const known = this.sql.exec("SELECT 1 FROM answers WHERE field = ?", field).toArray().length;
+      if (!known && this.sql.exec("SELECT COUNT(*) AS n FROM answers").one().n >= 2000) return;
 
       this.sql.exec(
         `INSERT INTO answers (field, value, updated_at) VALUES (?, ?, ?)
@@ -300,6 +305,11 @@ export class AccountStore {
         failures INTEGER NOT NULL DEFAULT 0,
         locked_until INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS attempts (
+        key TEXT PRIMARY KEY,
+        count INTEGER NOT NULL,
+        window_start INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS memberships (
         user_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
@@ -324,6 +334,35 @@ export class AccountStore {
       } catch { return json({ ok: false, error: 'taken' }); }
       return json({ ok: true, user: { id, username: b.username, display: b.display || b.username } });
     }
+    /* Throttling, keyed by the gate ("login:<ip>:<user>", "login-ip:<ip>",
+       "register:<ip>"). Counting happens BEFORE the password check, in one
+       call, so parallel requests can't all slip under the limit. Keys are
+       per client IP, so a stranger hammering a username doesn't lock the
+       real teacher out from their own network. */
+    if (path === '/throttle') {
+      const now = Date.now();
+      const key = String(b.key || '').slice(0, 200);
+      const max = Number(b.max) || 5, windowMs = Number(b.windowMs) || 300000;
+      const row = this.sql.exec('SELECT count, window_start FROM attempts WHERE key = ?', key).toArray()[0];
+      let count = 1;
+      if (row && now - row.window_start < windowMs) count = row.count + 1;
+      if (row && now - row.window_start < windowMs) this.sql.exec('UPDATE attempts SET count = ? WHERE key = ?', count, key);
+      else this.sql.exec('INSERT OR REPLACE INTO attempts (key, count, window_start) VALUES (?, ?, ?)', key, 1, now);
+      if (Math.random() < 0.01) this.sql.exec('DELETE FROM attempts WHERE window_start < ?', now - 86400000);
+      return json({ ok: count <= max, count });
+    }
+    if (path === '/throttle-clear') {
+      this.sql.exec('DELETE FROM attempts WHERE key = ?', String(b.key || ''));
+      return json({ ok: true });
+    }
+    if (path === '/role-of') {
+      const r = this.sql.exec('SELECT role FROM memberships WHERE user_id = ? AND project_id = ?', String(b.userId || ''), String(b.projectId || '')).toArray()[0];
+      return json({ ok: true, role: r ? r.role : null });
+    }
+    if (path === '/owned-count') {
+      const r = this.sql.exec("SELECT COUNT(*) AS n FROM memberships WHERE user_id = ? AND role = 'owner'", String(b.userId || '')).one();
+      return json({ ok: true, count: r.n });
+    }
     if (path === '/find') {
       const row = this.sql.exec('SELECT * FROM users WHERE username = ?', String(b.username || '')).toArray()[0];
       return json(row ? { ok: true, user: user(row), pw: row.pw, lockedUntil: row.locked_until } : { ok: false });
@@ -331,18 +370,6 @@ export class AccountStore {
     if (path === '/by-id') {
       const row = this.sql.exec('SELECT * FROM users WHERE id = ?', String(b.id || '')).toArray()[0];
       return json(row ? { ok: true, user: user(row) } : { ok: false });
-    }
-    /* failures: 5 in a row lock the account for 30 s, doubling each time */
-    if (path === '/login-result') {
-      const row = this.sql.exec('SELECT failures FROM users WHERE id = ?', String(b.id || '')).toArray()[0];
-      if (!row) return json({ ok: false });
-      if (b.ok) this.sql.exec('UPDATE users SET failures = 0, locked_until = 0 WHERE id = ?', b.id);
-      else {
-        const f = row.failures + 1;
-        const lock = f >= 5 ? Date.now() + 30000 * 2 ** Math.min(f - 5, 8) : 0;
-        this.sql.exec('UPDATE users SET failures = ?, locked_until = ? WHERE id = ?', f, lock, b.id);
-      }
-      return json({ ok: true });
     }
     if (path === '/set-password') {
       this.sql.exec('UPDATE users SET pw = ?, failures = 0, locked_until = 0 WHERE id = ?', String(b.pw), String(b.id || ''));
@@ -378,6 +405,10 @@ export class Project {
   constructor(state) {
     this.ctx = state;
     this.sql = state.storage.sql;
+    this.schema();
+  }
+
+  schema() {
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS versions (version INTEGER PRIMARY KEY, created_at INTEGER NOT NULL, created_by TEXT NOT NULL, size INTEGER NOT NULL);
@@ -394,18 +425,28 @@ export class Project {
   }
   setMeta(k, v) { this.sql.exec('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, String(v)); }
 
+  /* All or nothing: a failure halfway would leave chunks without a
+     version row, and every later publish would collide on that version. */
   storeSheet(text, by) {
-    const cur = this.sql.exec('SELECT MAX(version) AS v FROM versions').one().v || 0;
-    const v = cur + 1;
-    for (let i = 0, n = 0; i < text.length; i += CHUNK, n++) {
-      this.sql.exec('INSERT INTO chunks (version, n, data) VALUES (?, ?, ?)', v, n, text.slice(i, i + CHUNK));
-    }
-    this.sql.exec('INSERT INTO versions (version, created_at, created_by, size) VALUES (?, ?, ?, ?)', v, Date.now(), String(by), text.length);
-    this.sql.exec('DELETE FROM chunks WHERE version <= ?', v - KEEP_VERSIONS);
-    this.sql.exec('DELETE FROM versions WHERE version <= ?', v - KEEP_VERSIONS);
-    this.setMeta('version', v);
-    this.setMeta('updated_at', Date.now());
-    return v;
+    return this.ctx.storage.transactionSync(() => {
+      const cur = this.sql.exec('SELECT MAX(version) AS v FROM versions').one().v || 0;
+      const v = cur + 1;
+      this.sql.exec('DELETE FROM chunks WHERE version = ?', v);
+      for (let i = 0, n = 0; i < text.length; n++) {
+        let end = Math.min(text.length, i + CHUNK);
+        // never split a surrogate pair across chunks (it would decode as U+FFFD)
+        const c = text.charCodeAt(end - 1);
+        if (end < text.length && c >= 0xd800 && c <= 0xdbff) end--;
+        this.sql.exec('INSERT INTO chunks (version, n, data) VALUES (?, ?, ?)', v, n, text.slice(i, end));
+        i = end;
+      }
+      this.sql.exec('INSERT INTO versions (version, created_at, created_by, size) VALUES (?, ?, ?, ?)', v, Date.now(), String(by), text.length);
+      this.sql.exec('DELETE FROM chunks WHERE version <= ?', v - KEEP_VERSIONS);
+      this.sql.exec('DELETE FROM versions WHERE version <= ?', v - KEEP_VERSIONS);
+      this.setMeta('version', v);
+      this.setMeta('updated_at', Date.now());
+      return v;
+    });
   }
 
   info() {
@@ -455,10 +496,14 @@ export class Project {
       return json({ ok: true, role: r ? r.role : null, title: this.meta().title || '' });
     }
     if (path === '/set-title') { this.setMeta('title', String(b.title || '').slice(0, 120) || 'Tanpa judul'); return json({ ok: true }); }
+    /* The owner row is never changed here: one owner, set at /init. */
     if (path === '/set-member') {
-      if (!b.role) this.sql.exec("DELETE FROM members WHERE user_id = ? AND role != 'owner'", String(b.userId));
+      if (b.role !== null && b.role !== 'editor' && b.role !== 'viewer') return json({ ok: false, error: 'role' }, 400);
+      const cur = this.sql.exec('SELECT role FROM members WHERE user_id = ?', String(b.userId)).toArray()[0];
+      if (cur && cur.role === 'owner') return json({ ok: false, error: 'owner' }, 400);
+      if (!b.role) this.sql.exec('DELETE FROM members WHERE user_id = ?', String(b.userId));
       else this.sql.exec(`INSERT INTO members (user_id, username, role) VALUES (?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET role = excluded.role, username = excluded.username`, String(b.userId), String(b.username), String(b.role));
+        ON CONFLICT(user_id) DO UPDATE SET role = excluded.role, username = excluded.username`, String(b.userId), String(b.username), b.role);
       return json({ ok: true });
     }
     if (path === '/add-room') {
@@ -469,11 +514,14 @@ export class Project {
       this.sql.exec('DELETE FROM rooms WHERE room_id = ?', String(b.roomId));
       return json({ ok: true });
     }
+    /* Called last, after the gate has freed the rooms and memberships
+       (so a failure halfway leaves the project listable and retryable).
+       deleteAll() drops the tables; recreate them so this live instance
+       answers "no such project" instead of throwing until it's evicted. */
     if (path === '/delete') {
-      const rooms = this.sql.exec('SELECT room_id FROM rooms').toArray().map((r) => r.room_id);
-      const members = this.sql.exec('SELECT user_id FROM members').toArray().map((r) => r.user_id);
       await this.ctx.storage.deleteAll();
-      return json({ ok: true, rooms, members });
+      this.schema();
+      return json({ ok: true });
     }
     return new Response('not found', { status: 404 });
   }

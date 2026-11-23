@@ -17,6 +17,13 @@ const PBKDF2_ITER = 100000; // the Workers WebCrypto maximum
 const ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 const ROLES = { viewer: 1, editor: 2, owner: 3 };
+const isRole = (r) => typeof r === "string" && Object.prototype.hasOwnProperty.call(ROLES, r);
+const MAX_SHEET_BYTES = 16e6;
+const MAX_ROOMS = 40;          // per project: /answers fans out one subrequest per room
+const MAX_OWNED = 100;         // projects per account
+// A PBKDF2 hash of nothing in particular: unknown usernames are checked
+// against it so they take as long as known ones (no timing enumeration).
+const DUMMY_HASH = "pbkdf2$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000";
 export const LEGACY_PROJECT = "lkpd-cerpen";
 
 /* ---------- crypto ---------- */
@@ -63,7 +70,7 @@ async function readUserToken(secret, token) {
 function readCookie(request, name) {
   for (const part of (request.headers.get("Cookie") || "").split(";")) {
     const [k, ...v] = part.trim().split("=");
-    if (k === name) return decodeURIComponent(v.join("="));
+    if (k === name) { try { return decodeURIComponent(v.join("=")); } catch { return null; } }
   }
   return null;
 }
@@ -105,18 +112,36 @@ export async function projectsApi(request, env, url, roomSession) {
     if (origin && origin !== url.origin) return err(403, "origin");
   }
 
-  const secret = env.SESSION_SECRET || "dev-secret-change-me";
+  // Fail closed: with no secret, account cookies would be forgeable from a
+  // user id. (Local dev sets SESSION_SECRET in .dev.vars.)
+  if (!env.SESSION_SECRET) return err(503, "Server belum dikonfigurasi (SESSION_SECRET).");
+  const secret = env.SESSION_SECRET;
+  const ip = request.headers.get("CF-Connecting-IP") || "local";
   const accounts = env.ACCOUNTS.get(env.ACCOUNTS.idFromName("global"));
   const registry = env.REGISTRY.get(env.REGISTRY.idFromName("global"));
   const project = (id) => env.PROJECT.get(env.PROJECT.idFromName(id));
   const room = (id) => env.ROOM.get(env.ROOM.idFromName(id));
-  const input = async () => { try { return await request.json(); } catch { return {}; } };
+  const input = async () => { try { const v = await request.json(); return v && typeof v === "object" ? v : {}; } catch { return {}; } };
+  // Cloudflare always sends CF-Connecting-IP; only local dev lacks it, and
+  // there one shared "IP" would make the test suites throttle themselves.
+  const throttle = async (key, max, windowMs) => !request.headers.get("CF-Connecting-IP") || (await call(accounts, "/throttle", { key, max, windowMs })).ok;
+  // Sheets: refuse by declared size before reading, then by real bytes.
+  const readSheet = async () => {
+    if (Number(request.headers.get("Content-Length") || 0) > MAX_SHEET_BYTES) return { error: "Lembar terlalu besar (maks. 16 MB)." };
+    const buf = await request.arrayBuffer();
+    if (buf.byteLength > MAX_SHEET_BYTES) return { error: "Lembar terlalu besar (maks. 16 MB)." };
+    const text = new TextDecoder().decode(buf);
+    const v = validateSheet(text);
+    return v.ok ? { text, sheet: v.sheet } : { error: "Lembar tidak valid: " + v.error };
+  };
   const userId = await readUserToken(secret, readCookie(request, USER_COOKIE));
   const me = async () => (userId ? (await call(accounts, "/by-id", { id: userId })).user || null : null);
 
   /* ---------------- join link: /j/ABC123 -> the gate with the code filled in */
   if (p.startsWith("/j/")) {
-    const code = normalizeCode(decodeURIComponent(p.slice(3))).slice(0, 20);
+    let raw = p.slice(3);
+    try { raw = decodeURIComponent(raw); } catch { /* keep it raw */ }
+    const code = normalizeCode(raw).replace(/[^A-Z0-9]/g, "").slice(0, 20);
     return Response.redirect(new URL("/?code=" + encodeURIComponent(code), url).toString(), 302);
   }
 
@@ -139,6 +164,7 @@ export async function projectsApi(request, env, url, roomSession) {
     return ok({ authed: true, user, projects });
   }
   if (p === "/api/account/register" && request.method === "POST") {
+    if (!(await throttle("register:" + ip, 10, 3600000))) return err(429, "Terlalu banyak pendaftaran dari jaringan ini. Coba lagi nanti.");
     const b = await input();
     const username = String(b.username || "").trim().toLowerCase();
     const password = String(b.password || "");
@@ -151,14 +177,21 @@ export async function projectsApi(request, env, url, roomSession) {
   }
   if (p === "/api/account/login" && request.method === "POST") {
     const b = await input();
-    const found = await call(accounts, "/find", { username: String(b.username || "").trim().toLowerCase() });
-    if (found.ok && found.lockedUntil > Date.now()) return err(429, "Terlalu banyak percobaan. Coba lagi sebentar lagi.");
-    const good = found.ok && await checkPassword(String(b.password || ""), found.pw);
-    if (found.ok) await call(accounts, "/login-result", { id: found.user.id, ok: good });
+    const username = String(b.username || "").trim().toLowerCase().slice(0, 64);
+    // Counted before the password check, per IP: 5 tries per username per
+    // 5 min, 30 per IP per 10 min. Never locks the account itself, so a
+    // stranger can't keep a teacher out.
+    const pairKey = `login:${ip}:${username}`;
+    if (!(await throttle(pairKey, 5, 300000)) || !(await throttle("login-ip:" + ip, 30, 600000))) {
+      return err(429, "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.");
+    }
+    const found = await call(accounts, "/find", { username });
+    const good = await checkPassword(String(b.password || ""), found.ok ? found.pw : DUMMY_HASH) && found.ok;
     if (!good) { await new Promise((r) => setTimeout(r, 400)); return err(401, "Nama pengguna atau kata sandi salah."); }
+    await call(accounts, "/throttle-clear", { key: pairKey });
     return ok({ user: found.user }, { headers: { "Set-Cookie": userCookie(await makeUserToken(secret, found.user.id), url) } });
   }
-  if (p === "/api/account/logout") {
+  if (p === "/api/account/logout" && request.method === "POST") {
     return ok({}, { headers: { "Set-Cookie": userCookie("", url, 0) } });
   }
 
@@ -167,28 +200,34 @@ export async function projectsApi(request, env, url, roomSession) {
   if (!user) return err(401, "Masuk dulu.");
 
   if (p === "/api/projects" && request.method === "POST") {
-    const text = await request.text();
-    const v = validateSheet(text);
-    if (!v.ok) return err(400, "Lembar tidak valid: " + v.error);
+    if ((await call(accounts, "/owned-count", { userId: user.id })).count >= MAX_OWNED) return err(403, `Batas ${MAX_OWNED} proyek tercapai. Hapus proyek lama dulu.`);
+    const got = await readSheet();
+    if (got.error) return err(400, got.error);
     const id = "prj-" + randomHex(8);
-    const title = String(v.sheet.title || "Tanpa judul").slice(0, 120);
+    const title = String(got.sheet.title || "Tanpa judul").slice(0, 120);
     const stub = project(id);
-    await call(stub, "/init", { id, title, ownerId: user.id, ownerName: user.username });
-    await stub.fetch("https://do/publish?by=" + encodeURIComponent(user.username), { method: "POST", body: text });
+    const init = await call(stub, "/init", { id, title, ownerId: user.id, ownerName: user.username });
+    const pub = init.ok && await (await stub.fetch("https://do/publish?by=" + encodeURIComponent(user.username), { method: "POST", body: got.text })).json();
+    if (!pub || !pub.ok) return err(500, "Gagal menyimpan proyek. Coba lagi.");
     await call(accounts, "/set-membership", { userId: user.id, projectId: id, role: "owner", title });
-    return ok({ id, version: 1 });
+    return ok({ id, version: pub.version });
   }
 
   const m = /^\/api\/projects\/([a-zA-Z0-9_-]{1,64})(\/[a-z/-]*)?$/.exec(p);
   if (!m) return err(404, "not found");
   const pid = m[1], sub = m[2] || "";
+  // The membership index first: guessing ids must not instantiate a
+  // Project DO per guess. The Project DO stays the source of truth.
+  if (!(await call(accounts, "/role-of", { userId: user.id, projectId: pid })).role) return err(404, "Proyek tidak ditemukan.");
   const stub = project(pid);
   const { role, title } = await call(stub, "/role", { userId: user.id });
   if (!role) return err(404, "Proyek tidak ditemukan.");
+  // Viewers grade; they don't get room codes (a code is write access).
+  const redact = (proj) => (ROLES[role] >= ROLES.editor ? proj : { ...proj, rooms: proj.rooms.map(({ code, ...r }) => r) });
   const need = (r) => ROLES[role] >= ROLES[r];
 
   if (sub === "" && request.method === "GET") {
-    return ok({ role, project: (await call(stub, "/info")).project });
+    return ok({ role, project: redact((await call(stub, "/info")).project) });
   }
   if (sub === "/sheet" && request.method === "GET") {
     const res = await stub.fetch("https://do/sheet", { method: "POST" });
@@ -196,11 +235,10 @@ export async function projectsApi(request, env, url, roomSession) {
   }
   if (sub === "/sheet" && request.method === "PUT") {
     if (!need("editor")) return err(403, "Hanya penyunting yang bisa menerbitkan.");
-    const text = await request.text();
-    const v = validateSheet(text);
-    if (!v.ok) return err(400, "Lembar tidak valid: " + v.error);
-    const res = await (await stub.fetch("https://do/publish?by=" + encodeURIComponent(user.username), { method: "POST", body: text })).json();
-    const newTitle = String(v.sheet.title || "").slice(0, 120);
+    const got = await readSheet();
+    if (got.error) return err(400, got.error);
+    const res = await (await stub.fetch("https://do/publish?by=" + encodeURIComponent(user.username), { method: "POST", body: got.text })).json();
+    const newTitle = String(got.sheet.title || "").slice(0, 120);
     if (newTitle && newTitle !== title) {
       await call(stub, "/set-title", { title: newTitle });
       await call(accounts, "/retitle", { projectId: pid, title: newTitle });
@@ -209,6 +247,7 @@ export async function projectsApi(request, env, url, roomSession) {
   }
   if (sub === "/rooms" && request.method === "POST") {
     if (!need("editor")) return err(403, "Hanya penyunting yang bisa membuat ruang.");
+    if ((await call(stub, "/info")).project.rooms.length >= MAX_ROOMS) return err(403, `Satu proyek paling banyak ${MAX_ROOMS} ruang.`);
     const label = String((await input()).label || "").trim().slice(0, 60) || "Kelompok";
     const legacy = normalizeCode(env.GROUP_CODE || "");
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -247,9 +286,9 @@ export async function projectsApi(request, env, url, roomSession) {
       try {
         const st = await (await room(r.id).fetch("https://room/state", { method: "POST" })).json();
         return { ...r, answers: st.answers || {}, peers: (st.peers || []).map((q) => ({ name: q.name, focus: q.focus })) };
-      } catch { return { ...r, answers: {}, peers: [] }; }
+      } catch { return { ...r, answers: {}, peers: [], error: true }; } // shown as "couldn't load", not as empty
     }));
-    return ok({ rooms });
+    return ok({ rooms: redact({ rooms }).rooms });
   }
   if (sub === "/share" && request.method === "POST") {
     if (!need("owner")) return err(403, "Hanya pemilik yang bisa mengatur akses.");
@@ -257,19 +296,25 @@ export async function projectsApi(request, env, url, roomSession) {
     const target = await call(accounts, "/find", { username: String(b.username || "").trim().toLowerCase() });
     if (!target.ok) return err(404, "Pengguna tidak ditemukan.");
     if (target.user.id === user.id) return err(400, "Itu akun Anda sendiri.");
-    const newRole = b.role && b.role !== "owner" && ROLES[b.role] ? b.role : null;
-    await call(stub, "/set-member", { userId: target.user.id, username: target.user.username, role: newRole });
+    const newRole = isRole(b.role) && b.role !== "owner" ? b.role : null;
+    const set = await call(stub, "/set-member", { userId: target.user.id, username: target.user.username, role: newRole });
+    if (!set.ok) return err(400, "Peran pemilik tidak bisa diubah.");
     await call(accounts, "/set-membership", { userId: target.user.id, projectId: pid, role: newRole, title });
     return ok({ project: (await call(stub, "/info")).project });
   }
   if (sub === "/delete" && request.method === "POST") {
     if (!need("owner")) return err(403, "Hanya pemilik yang bisa menghapus proyek.");
-    const gone = await call(stub, "/delete");
-    for (const rid of gone.rooms || []) {
-      await room(rid).fetch("https://room/reset-http", { method: "POST" });
-      await call(registry, "/delete-room", { roomId: rid });
+    // Free codes and answers, then memberships, and only then the project
+    // itself: if this stops halfway (a subrequest limit, an error), the
+    // project still lists what is left and deleting again finishes the job.
+    const info = (await call(stub, "/info")).project;
+    for (const r of info.rooms) {
+      await call(registry, "/delete-room", { roomId: r.id });
+      await room(r.id).fetch("https://room/reset-http", { method: "POST" });
+      await call(stub, "/remove-room", { roomId: r.id });
     }
-    for (const uid of gone.members || []) await call(accounts, "/set-membership", { userId: uid, projectId: pid, role: null });
+    for (const mbr of info.members) await call(accounts, "/set-membership", { userId: mbr.id, projectId: pid, role: null });
+    await call(stub, "/delete");
     return ok({});
   }
   return err(404, "not found");

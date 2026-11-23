@@ -675,13 +675,13 @@ function classPanel() {
     const pct = total ? Math.round((100 * filled) / total) : 0;
     const link = `${location.origin}/j/${r.code}`;
     wrap.append(h('div', { class: 'room-card' + (r.id === classRoom ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button')) return; classRoom = r.id; renderSheet(); renderInspector(); } },
-      h('div', { class: 'rc-top' }, h('span', { class: 'rc-label' }, r.label), h('code', {}, r.code)),
+      h('div', { class: 'rc-top' }, h('span', { class: 'rc-label' }, r.label), r.code ? h('code', {}, r.code) : null),
       h('div', { class: 'rc-meta' },
         h('span', { class: 'live' + (r.peers.length ? '' : ' off') }, r.peers.length ? `${r.peers.length} online: ${r.peers.map((p) => p.name).join(', ')}` : 'tidak ada yang online'),
-        h('span', {}, `${filled}/${total} isian`)),
+        h('span', {}, r.error ? 'jawaban gagal dimuat' : `${filled}/${total} isian`)),
       h('div', { class: 'progress' }, h('i', { style: `width:${pct}%` })),
       r.id === classRoom ? h('div', { class: 'row', style: 'margin-top:10px' },
-        h('button', { class: 'btn tonal', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(link); snack('Tautan disalin: ' + link); } catch { snack(link); } } }, 'Salin tautan'),
+        r.code ? h('button', { class: 'btn tonal', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(link); snack('Tautan disalin: ' + link); } catch { snack(link); } } }, 'Salin tautan') : null,
         canEdit ? h('button', { class: 'btn text', type: 'button', onclick: async () => { if (!confirm(`Kosongkan semua jawaban ${r.label}?`)) return; await projects.resetRoom(project.id, r.id); classTick(); } }, 'Kosongkan') : null,
         canEdit ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (!confirm(`Hapus ${r.label}? Kode ${r.code} tidak bisa dipakai lagi dan jawabannya hilang.`)) return; await projects.removeRoom(project.id, r.id); classRoom = null; classTick(); } }, 'Hapus') : null) : null));
   }
@@ -695,7 +695,9 @@ function classPanel() {
 
 function exportCsv(rooms) {
   const fields = allFields().map((x) => x.f);
-  const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  // Quote every cell, and defuse spreadsheet formulas: a student can type
+  // =HYPERLINK(...) as an answer, and Excel would run it on the teacher's PC.
+  const q = (v) => { let t = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""')}"`; };
   const rows = [['Ruang', 'Kode', ...fields.map((f) => f.label || f.id)].map(q).join(',')];
   for (const r of rooms) rows.push([r.label, r.code, ...fields.map((f) => (f.kind === 'checkbox' ? (r.answers[f.id] ? 'ya' : '') : r.answers[f.id]))].map(q).join(','));
   // BOM so Excel opens UTF-8 (Indonesian text) correctly

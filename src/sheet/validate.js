@@ -12,6 +12,15 @@ export const LIMITS = {
 };
 const KINDS = new Set(['text', 'textarea', 'checkbox', 'date', 'number']);
 const ID = /^[A-Za-z0-9_-]{1,60}$/;
+// Field ids become DOM ids next to the app's own chrome; these would
+// shadow it (getElementById returns the first match).
+const RESERVED = /^(note|snack|sheet|title|status|peers|menu|moreBtn|codeChip|roomLabel|roomCode|printBtn|nameScrim|nameForm|nameInput|nameErr|nameEyebrow|auth\w*|canvas|inspector|editor|start|busy|drop|app|esh-.*)$/;
+// The background is only ever an <img> (no script either way), but refuse
+// what would matter if it were ever inlined or opened: script and
+// foreignObject under any namespace prefix, event attributes, javascript:
+// (also entity-encoded), and any href that isn't an internal #ref or an
+// embedded raster image, quoted or not.
+const BAD_SVG = /<\s*([\w-]+:)?(script|foreignObject|iframe|object|embed)\b|[\s/"']on[a-z]+\s*=|javascript:|&#|href\s*=\s*(?!["']?(#|data:image\/(png|jpeg|gif|webp);base64,))/i;
 const num = (v) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e5;
 const str = (v, max) => typeof v === 'string' && v.length <= max;
 
@@ -37,7 +46,7 @@ export function validateSheet(input) {
     if (!p || !ID.test(p.id) || !num(p.width) || !num(p.height) || p.width <= 0 || p.height <= 0) return fail(at + ': bad page');
     if (p.background != null) {
       if (!str(p.background, LIMITS.backgroundBytes)) return fail(at + ': background too large');
-      if (!p.background.startsWith('<svg') || /<script|<foreignObject|\son[a-z]+\s*=|javascript:|href\s*=\s*"(?!#|data:image\/(png|jpeg|gif|webp);)/i.test(p.background)) return fail(at + ': background not allowed');
+      if (!p.background.startsWith('<svg') || BAD_SVG.test(p.background)) return fail(at + ': background not allowed');
     }
     if (!Array.isArray(p.text) || p.text.length > LIMITS.textPerPage) return fail(at + ': bad text');
     for (const t of p.text) {
@@ -47,7 +56,7 @@ export function validateSheet(input) {
     }
     if (!Array.isArray(p.fields) || p.fields.length > LIMITS.fieldsPerPage) return fail(at + ': bad fields');
     for (const f of p.fields) {
-      if (!f || !ID.test(f.id) || ids.has(f.id)) return fail(at + ': bad or duplicate field id ' + (f && f.id));
+      if (!f || !ID.test(f.id) || RESERVED.test(f.id) || ids.has(f.id)) return fail(at + ': bad, reserved or duplicate field id ' + (f && f.id));
       ids.add(f.id);
       if (!KINDS.has(f.kind) || !num(f.x) || !num(f.y) || !num(f.w) || !num(f.h) || f.w <= 0 || f.h <= 0) return fail(at + ': bad field ' + f.id);
       if (!str(f.label || '', LIMITS.label) || !str(f.placeholder || '', LIMITS.label) || !str(f.prompt || '', 600)) return fail(at + ': field text too long ' + f.id);
