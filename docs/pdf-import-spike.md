@@ -74,8 +74,8 @@ captioned box, a ruled table, checkboxes, and one real AcroForm field.
 
 The dark "Catatan guru" panel (teacher-only) is correctly *not* a field.
 
-![Demo page 1: PDF, scaffold, diff](demo-page-1.png)
-![Demo page 2: PDF, scaffold, diff](demo-page-2.png)
+![Demo page 1: PDF, scaffold, diff](pdf-import-spike/demo-page-1.png)
+![Demo page 2: PDF, scaffold, diff](pdf-import-spike/demo-page-2.png)
 
 ### The LKPD reference (Chrome/Skia PDF, all Type 3 fonts)
 
@@ -102,8 +102,8 @@ draws "NAMA KELOMPOK / ANGGOTA" as two plain dotted lines, so we produce one
 structured inputs (4 members × name/presensi, …). No geometry implies that
 structure; it is an authoring decision.
 
-![LKPD page 1: PDF, scaffold, diff](lkpd-page-1.png)
-![LKPD page 2: PDF, scaffold, diff](lkpd-page-2.png)
+![LKPD page 1: PDF, scaffold, diff](pdf-import-spike/lkpd-page-1.png)
+![LKPD page 2: PDF, scaffold, diff](pdf-import-spike/lkpd-page-2.png)
 
 ## What extracts cleanly, and what doesn't
 
