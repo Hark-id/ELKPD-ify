@@ -35,7 +35,7 @@ All geometry is in **PDF points, origin top-left**. A page renders at
       "lineGap": 22, "lines": 3,  // optional: answer written on ruled lines
       "grow": false,              // optional: textarea doesn't grow (default: grows)
       "size": 11,                 // optional: font size hint for single-line fields
-      "source": "lines"           // how it was found: acroform | leader | table | line | lines | box | checkbox | manual
+      "source": "lines"           // how it was found: acroform | leader | table | line | lines | box | checkbox | space | manual
     }],
     "unsupported": { "tilingPattern": 4 },   // importer diagnostics, informational
     "stats": { … }

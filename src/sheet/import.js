@@ -104,14 +104,48 @@ async function jpegDataUri(w, h, kind, data) {
   } catch { return null; }
 }
 
+// Pictures far denser than they are drawn are shrunk first. Real worksheets
+// paste 1200 px icons into a 12 pt table cell (seen in a Keynote export: 210
+// such placements on one page); re-encoded at full size each one is megabytes
+// of PNG that no screen or printer will ever show. 4 px per point is 288 dpi
+// at the PDF's own size, still sharp at the player's maximum zoom. Only
+// whole-number factors, so every output pixel is a plain box average.
+const MAX_PX_PER_PT = 4;
+function shrinkFactor(w, h, drawW, drawH) {
+  if (!(drawW > 0) || !(drawH > 0)) return 1;
+  return Math.max(1, Math.floor(Math.min(w / (drawW * MAX_PX_PER_PT), h / (drawH * MAX_PX_PER_PT))));
+}
+function shrink(data, w, h, ch, f) {
+  const W = Math.floor(w / f), H = Math.floor(h / f);
+  const out = new Uint8Array(W * H * ch);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let dy = 0; dy < f; dy++) {
+      let i = ((y * f + dy) * w + x * f) * ch;
+      for (let dx = 0; dx < f; dx++, i += ch) {
+        // Colour is weighted by alpha, or transparent pixels (usually black
+        // underneath) would darken every soft edge.
+        const al = ch === 4 ? data[i + 3] : 255;
+        r += data[i] * al; g += data[i + 1] * al; b += data[i + 2] * al; a += al;
+      }
+    }
+    const o = (y * W + x) * ch;
+    if (a) { out[o] = r / a; out[o + 1] = g / a; out[o + 2] = b / a; }
+    if (ch === 4) out[o + 3] = a / (f * f);
+  }
+  return { data: out, w: W, h: H };
+}
+
 // In a browser pdf.js may hand images over already decoded as an
 // ImageBitmap (its worker uses the platform decoders). Same policy: PNG, or
 // JPEG when opaque and clearly smaller.
 // (The bitmap's own width isn't always populated; the image object's is.)
-async function bitmapToDataUri(img) {
+async function bitmapToDataUri(img, drawW, drawH) {
   const bmp = img && img.bitmap;
-  const w = img && (img.width || (bmp && bmp.width)), h = img && (img.height || (bmp && bmp.height));
-  if (typeof OffscreenCanvas === 'undefined' || !bmp || !w || !h) return null;
+  const w0 = img && (img.width || (bmp && bmp.width)), h0 = img && (img.height || (bmp && bmp.height));
+  if (typeof OffscreenCanvas === 'undefined' || !bmp || !w0 || !h0) return null;
+  const f = shrinkFactor(w0, h0, drawW, drawH);
+  const w = Math.max(1, Math.floor(w0 / f)), h = Math.max(1, Math.floor(h0 / f));
   try {
     const c = new OffscreenCanvas(w, h);
     const g = c.getContext('2d');
@@ -129,10 +163,13 @@ async function bitmapToDataUri(img) {
 
 // pdf.js decoded image -> PNG data URI. kind 1 = 1bpp gray (bit 1 = white,
 // rows byte-aligned, which is exactly PNG's 1-bit grayscale), 2 = RGB, 3 = RGBA.
-async function imageToDataUri(img) {
+async function imageToDataUri(img, drawW, drawH) {
   if (!img || !img.data) return null;
-  const { width: w, height: h, kind } = img;
-  const data = asBytes(img.data);
+  let { width: w, height: h } = img;
+  const kind = img.kind;
+  let data = asBytes(img.data);
+  const f = kind === 2 || kind === 3 ? shrinkFactor(w, h, drawW, drawH) : 1;
+  if (f > 1) ({ data, w, h } = shrink(data, w, h, kind === 2 ? 3 : 4, f));
   let buf;
   if (kind === 1) buf = await png(w, h, 0, 1, withFilterBytes(data, (w + 7) >> 3, h));
   else if (kind === 2) buf = await png(w, h, 2, 8, withFilterBytes(data, w * 3, h));
@@ -240,6 +277,8 @@ async function extractPage(page, pageNo) {
   const glyphs = [];   // individual glyph placements, merged into spans later
   const clips = new Map(); // key -> {id, d, rule, parent}
   const gradients = [];
+  const patterns = []; // tiling patterns: { id, x, y, w, h, transform, shapes }
+  let patternDepth = 0;
   let clipSeq = 0;
 
   const getObj = (store, id) => { try { return store.get(id); } catch { return null; } };
@@ -365,7 +404,14 @@ async function extractPage(page, pageNo) {
       if (q[0] - bbox[0] < 1.5) grow(side[2], q[1]);
       if (bbox[2] - q[0] < 1.5) grow(side[3], q[1]);
     }
-    const outline = inBand && side.every((r, k) => r[1] - r[0] >= 0.7 * (k < 2 ? bw : bh));
+    //
+    // Only the two LONG sides have to be mostly straight. A wide box with a
+    // generous corner radius (Canva's "Nama anggota kelompok" card: 430 x 95
+    // with r = 28) keeps just ~40% of each short side straight, and asking
+    // 70% of those too threw the whole card out. A circle still fails: its
+    // points cover ~55% of every side, long or short.
+    const wide = bw >= bh;
+    const outline = inBand && side.every((r, k) => r[1] - r[0] >= ((k < 2) === wide ? 0.7 : 0.3) * (k < 2 ? bw : bh));
     const boxy = !!rect || onEdge >= 0.85 * p.pts.length || outline;
     // "Frame": an outline made of many small pieces, which is how Skia/
     // Chrome paints a dotted or dashed border (one FILLED compound path, a
@@ -440,32 +486,71 @@ async function extractPage(page, pageNo) {
       const id = gradientFromIR(ir, mul(args[2] || ID, st.base));
       st[which] = id;
     } else if (args[0] === 'TilingPattern') {
-      // Tiling patterns would need their own operator list rendered into an
-      // SVG <pattern>; out of scope for the spike. Chrome/Skia emits them for
-      // gradients with alpha (glows), wrapped in a luminosity soft mask: for
-      // those, painting nothing is closer than any opaque fallback.
-      bump('tilingPattern');
+      // Three cases. Chrome/Skia emits tiling patterns for gradients with
+      // alpha (glows), wrapped in a luminosity soft mask: for those, painting
+      // nothing is closer than any opaque fallback. A tile that is just a
+      // shading becomes that gradient. Anything else (hatches, textures) is
+      // rendered into an SVG <pattern> by tilePattern().
       const sub = args[2];
       const masked = sub && sub.argsArray.some((x) => x && x[0] && x[0].smask);
       const shIdx = sub ? sub.fnArray.indexOf(OPS.shadingFill) : -1;
-      if (masked) st[which] = 'none';
+      if (masked) { bump('tilingPattern'); st[which] = 'none'; }
       else if (shIdx >= 0) st[which] = gradientFromIR(getObj(page.objs, sub.argsArray[shIdx][0]) || getCommon(sub.argsArray[shIdx][0]), mul(args[3] || ID, st.base));
-      else { st[which] = null; st[which === 'fillPat' ? 'fill' : 'stroke'] = [200, 200, 200]; }
+      else if (!(st[which] = tilePattern(args))) { bump('tilingPattern'); st[which] = null; st[which === 'fillPat' ? 'fill' : 'stroke'] = [200, 200, 200]; }
     } else bump('pattern:' + args[0]);
+  }
+
+  // Everything else a tiling pattern can be: Word and PowerPoint write their
+  // hatch and texture fills (the diagonal-stripe corner of a page border, a
+  // "paper" slide background) as a small tile holding an image or a few
+  // strokes. The tile's own operator list runs through the same interpreter,
+  // in pattern space, into an SVG <pattern>. Text inside a tile is dropped.
+  function tilePattern(args) {
+    const [, color, sub, matrix, bbox, xstep, ystep, paintType] = args;
+    if (!sub || !sub.fnArray || !bbox || !(Math.abs(xstep) > 0.01) || !(Math.abs(ystep) > 0.01) || patternDepth > 1) return null;
+    const outer = shapes.splice(0), nGlyphs = glyphs.length;
+    const saved = { st, stack: stack.splice(0), cur, pendingClip, tm, tlm };
+    const x0 = Math.min(bbox[0], bbox[2]), y0 = Math.min(bbox[1], bbox[3]), x1 = Math.max(bbox[0], bbox[2]), y1 = Math.max(bbox[1], bbox[3]);
+    st = fresh();
+    st.ctm = ID.slice(); st.base = ID.slice(); st.clipBox = [x0, y0, x1, y1];
+    // Uncoloured pattern (PaintType 2): the tile is a stencil in this colour.
+    if (paintType === 2 && color && color.length >= 3) { st.fill = color; st.stroke = color; }
+    cur = null; pendingClip = null;
+    patternDepth++;
+    try { run(sub.fnArray, sub.argsArray); } catch { /* a broken tile falls back to the flat colour */ }
+    patternDepth--;
+    const tile = shapes.splice(0);
+    shapes.push(...outer); glyphs.length = nGlyphs;
+    stack.length = 0; stack.push(...saved.stack);
+    ({ st, cur, pendingClip, tm, tlm } = saved);
+    if (!tile.length) return null;
+    const id = `t${pageNo}-${patterns.length + 1}`;
+    patterns.push({ id, x: r2(x0), y: r2(y0), w: r2(Math.abs(xstep)), h: r2(Math.abs(ystep)), transform: mul(matrix || ID, st.base), shapes: tile });
+    return id;
   }
 
   // Encoding is async (CompressionStream), so the shape is placed now, in
   // paint order, and its href filled in once the PNG is ready.
-  const pendingImages = [];
-  function placeImage(uriPromise, w, h, kind) {
-    if (!uriPromise) { bump('undecodedImage'); return; }
+  //
+  // One encode per distinct image, however often it is painted: `key` is
+  // pdf.js' object id (null = never shared). A worksheet that stamps the
+  // same icon in every table cell otherwise spent most of the import
+  // deflating the same pixels again, and the 10 s image wait above started
+  // expiring behind that queue, so pictures went missing as well.
+  const imageJobs = new Map(); // key -> { make(drawW, drawH), w, h, shapes }
+  function placeImage(key, make, w, h, kind) {
     const m = mul([1, 0, 0, -1, 0, 1], st.ctm);
     const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => apply(m, x, y));
     const xs = corners.map((c) => c[0]), ys = corners.map((c) => c[1]);
     const sh = { type: 'image', href: null, matrix: m, pxW: w, pxH: h, kind,
       bbox: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(r2), fa: st.fa, clip: st.clip, blend: st.blend };
     shapes.push(sh);
-    pendingImages.push(uriPromise.then((u) => { sh.href = u; }, () => { sh.href = null; }));
+    const k = key || sh;
+    let job = imageJobs.get(k);
+    if (!job) { job = { make, w: 0, h: 0, shapes: [] }; imageJobs.set(k, job); }
+    // Largest size it is drawn at, in points: what the encode is sized for.
+    job.w = Math.max(job.w, Math.hypot(m[0], m[1])); job.h = Math.max(job.h, Math.hypot(m[2], m[3]));
+    job.shapes.push(sh);
   }
 
   function showGlyphs(glyphsArg) {
@@ -505,7 +590,7 @@ async function extractPage(page, pageNo) {
     }
   }
 
-  const { fnArray, argsArray } = ops;
+  function run(fnArray, argsArray) {
   for (let i = 0; i < fnArray.length; i++) {
     const fn = fnArray[i], a = argsArray[i];
     switch (fn) {
@@ -574,11 +659,18 @@ async function extractPage(page, pageNo) {
       }
       case OPS.paintImageXObject: case OPS.paintImageXObjectRepeat: {
         if (fn === OPS.paintImageXObjectRepeat) bump('imageRepeat');
-        placeImage(imgAsync(a[0]).then((img) => (!img ? null : img.bitmap ? bitmapToDataUri(img) : imageToDataUri(img))), a[1], a[2], 'image');
+        const id = a[0];
+        placeImage(id, (dw, dh) => imgAsync(id).then((img) => (!img ? null : img.bitmap ? bitmapToDataUri(img, dw, dh) : imageToDataUri(img, dw, dh))), a[1], a[2], 'image');
         break;
       }
-      case OPS.paintInlineImageXObject: placeImage(imageToDataUri(a[0]), a[0].width, a[0].height, 'inline'); break;
-      case OPS.paintImageMaskXObject: placeImage(maskToDataUri(a[0], st.fill), a[0].width, a[0].height, 'mask'); break;
+      case OPS.paintInlineImageXObject: { const im = a[0]; placeImage(null, (dw, dh) => imageToDataUri(im, dw, dh), im.width, im.height, 'inline'); break; }
+      case OPS.paintImageMaskXObject: {
+        // The mask's bits are either inline or, when pdf.js cached the mask,
+        // an object id to resolve like any other image.
+        const im = a[0], rgb = st.fill, ref = typeof im.data === 'string' ? im.data : null;
+        placeImage(ref ? ref + '|' + hex(rgb) : null, () => (ref ? imgAsync(ref) : Promise.resolve(im)).then((mk) => maskToDataUri(mk, rgb)), im.width, im.height, 'mask');
+        break;
+      }
       case OPS.paintSolidColorImageMask: {
         buildPath([OPS.rectangle], [0, 0, 1, 1]); paint(true, false, 'nonzero'); break;
       }
@@ -603,17 +695,51 @@ async function extractPage(page, pageNo) {
         tlm = mul([1, 0, 0, 1, 0, -st.tl], tlm); tm = tlm.slice(); showGlyphs(a[0]); break;
       case OPS.nextLineSetSpacingShowText:
         st.tw = a[0]; st.tc = a[1]; tlm = mul([1, 0, 0, 1, 0, -st.tl], tlm); tm = tlm.slice(); showGlyphs(a[2]); break;
+      // ---- annotations with an appearance stream (ink, stamps, highlights,
+      // filled form widgets) arrive in the same list. pdf.js starts each from
+      // a clean graphics state at the page's base transform, clipped to the
+      // annotation's rectangle, then applies its two matrices. Ignoring that
+      // drew the appearance with whatever state the page ended on: a scan
+      // whose owner had inked over a name showed the ink in a corner and the
+      // name in full.
+      case OPS.beginAnnotation: {
+        stack.push({ ...st, ctm: st.ctm.slice() });
+        st = fresh();
+        const [, rect, tf, mtx, ownCanvas] = a;
+        if (Array.isArray(rect) && rect.length === 4 && !ownCanvas) {
+          buildPath([OPS.rectangle], [rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1]]);
+          pendingClip = 'nonzero'; paint(false, false);
+        }
+        if (tf) st.ctm = mul(tf, st.ctm);
+        if (mtx) st.ctm = mul(mtx, st.ctm);
+        st.base = st.ctm.slice();
+        break;
+      }
+      case OPS.endAnnotation: if (stack.length) st = stack.pop(); break;
       default: break;
     }
   }
+  }
+  const { fnArray, argsArray } = ops;
+  run(fnArray, argsArray);
 
   // Text colour from a pattern fill (gradient text) is reduced to the base colour.
   if (glyphs.some((g) => g.pattern)) bump('patternFilledText');
 
-  await Promise.all(pendingImages);
-  for (let k = shapes.length - 1; k >= 0; k--) {
-    if (shapes[k].type === 'image' && !shapes[k].href) { shapes.splice(k, 1); bump('undecodedImage'); }
+  // One at a time: encoding is CPU-bound, and a page of scans queued all at
+  // once holds every decoded bitmap in memory together.
+  for (const job of imageJobs.values()) {
+    let uri = null;
+    try { uri = await job.make(job.w, job.h); } catch { uri = null; }
+    for (const sh of job.shapes) sh.href = uri;
   }
+  const dropUndecoded = (list) => {
+    for (let k = list.length - 1; k >= 0; k--) {
+      if (list[k].type === 'image' && !list[k].href) { list.splice(k, 1); bump('undecodedImage'); }
+    }
+  };
+  dropUndecoded(shapes);
+  for (const pt of patterns) dropUndecoded(pt.shapes);
 
   const fonts = Object.fromEntries([...fontCache.values()].map((f) => [f.id, f]));
   const spans = mergeGlyphs(glyphs, fonts);
@@ -631,7 +757,7 @@ async function extractPage(page, pageNo) {
   });
 
   const pageData = { page: pageNo, width: r2(W), height: r2(H), fonts, spans, shapes,
-    clips: [...clips.values()], gradients, widgets, unsupported,
+    clips: [...clips.values()], gradients, patterns, widgets, unsupported,
     stats: { opCount: fnArray.length, glyphs: glyphs.length, spans: spans.length, shapes: shapes.length,
       images: shapes.filter((s) => s.type === 'image').length, clips: clips.size, gradients: gradients.length,
       textContentChars: tcChars, extractedChars: ourChars } };
@@ -735,17 +861,50 @@ function detectFields(pg) {
   // 1. Leader runs in text: "Nama: ..........." or "____".
   for (const s of spans) {
     if (s.angle) continue;
-    const re = /[._…]{4,}/g;
-    let m;
+    // Two kinds. A long run (4+ characters, 20pt or more) is a leader
+    // wherever it sits. A SHORT one, down to three dots or a single ellipsis
+    // character, is how fill-in maths is typed in Word ("... x + ... y = 12",
+    // ".... dari ......"): it counts only when it stands on its own, because
+    // the same three dots end ordinary sentences ("usiamu adalah...") and get
+    // quoted in instructions (lengkapi tanda " ... "). So: not glued to a
+    // letter or digit before it, and not inside quotation marks.
+    const re = /[._\u2026]{3,}|\u2026/g;
+    let m, blanksInRun = 0;
     while ((m = re.exec(s.text))) {
       const x0 = s.x + (s.charX[m.index] ?? 0);
       const endIdx = m.index + m[0].length;
       const x1 = endIdx < s.charX.length ? s.x + s.charX[endIdx] : s.x + s.width;
-      if (x1 - x0 < 20) continue;
+      if (m[0].length < 4 || x1 - x0 < 20) {
+        if (x1 - x0 < 5) continue;
+        const prev = s.text.slice(0, m.index), next = s.text.slice(endIdx);
+        if (/[\p{L}\p{N}]$/u.test(prev)) continue;
+        if (/["'\u201C\u201D\u2018\u2019\u00AB\u201E]\s*$/.test(prev) || /^\s*["'\u201C\u201D\u2018\u2019\u00BB]/.test(next)) continue;
+        // "... adalah ..." closing a multiple-choice stem trails off the
+        // same way with a space in front: last thing in its run, after a
+        // word, and the only blank there. The answer is one of the options.
+        if (!next.trim() && /\p{L}\s+$/u.test(prev) && !blanksInRun) continue;
+      }
+      blanksInRun++;
       // Label: the words before the leader in the same run ("Nama :").
-      const before = s.text.slice(0, m.index).split(/[._\u2026]{4,}/).pop().replace(/[:\s]+$/, '').trim();
+      const before = s.text.slice(0, m.index).split(/[._\u2026]{3,}|\u2026/).pop().replace(/[:\s]+$/, '').trim();
       cands.push({ src: 'leader', kind: 'input', box: [x0, s.baseline - s.size * 1.15, x1, s.baseline + s.size * 0.25], prio: 1, size: s.size,
         name: before || undefined });
+    }
+  }
+
+  // One blank typed in two runs is one field. Word's autocorrect turns the
+  // first three dots of "......" into a single ellipsis character in the
+  // body font and leaves the rest as dots, often in another font, so the
+  // run (and the leader) is cut in the middle.
+  {
+    const ls = cands.filter((c) => c.src === 'leader').sort((a, b) => a.box[3] - b.box[3] || a.box[0] - b.box[0]);
+    for (let k = 1; k < ls.length; k++) {
+      const a = ls[k - 1], b = ls[k];
+      if (Math.abs(a.box[3] - b.box[3]) < 1.5 && b.box[0] - a.box[2] < 2 && b.box[0] - a.box[2] > -2) {
+        b.box = [a.box[0], Math.min(a.box[1], b.box[1]), b.box[2], Math.max(a.box[3], b.box[3])];
+        b.name = a.name || b.name;
+        cands.splice(cands.indexOf(a), 1);
+      }
     }
   }
 
@@ -827,6 +986,9 @@ function detectFields(pg) {
   //    running text just beyond them).
   const isSeparator = (h) => (h.y > H * 0.9 && tboxes.some((t) => t[1] > h.y && t[1] < h.y + 24)) ||
     (h.y < H * 0.1 && tboxes.some((t) => t[3] < h.y && t[3] > h.y - 24));
+  // The text column: leftmost and rightmost ink of the page's running text.
+  const contentX0 = tboxes.length ? Math.min(...tboxes.map((t) => t[0])) : 0;
+  const contentX1 = tboxes.length ? Math.max(...tboxes.map((t) => t[2])) : W;
   const lines = hs.filter((h) => !usedH.has(h) && h.x1 - h.x0 >= 40 && h.x1 - h.x0 < W * 0.95 && !isSeparator(h))
     .filter((h) => !tboxes.some((t) => overlap(t, [h.x0, h.y - 10, h.x1, h.y + 1]) > 0));
   // Stack equally spaced lines of equal extent into one multi-line textarea.
@@ -846,6 +1008,12 @@ function detectFields(pg) {
     if (g.length === 1) {
       // A lone rule with no prompt anywhere near it is decoration.
       if (!labelFor([first.x0, first.y - 18, first.x1, first.y], spans)) continue;
+      // So is a lone rule right across the text column with text starting
+      // just under it: the rules a Google Docs or Word author puts around a
+      // section heading ("II. Isilah titik-titik ..."). A real single answer
+      // line shares its row with a label, so it never spans the full column.
+      if (first.x0 <= contentX0 + 6 && first.x1 >= contentX1 - 6 &&
+        tboxes.some((t) => t[1] >= first.y - 1 && t[1] - first.y < 14 && Math.min(t[2], first.x1) > Math.max(t[0], first.x0))) continue;
       // Height: whatever empty space is above, capped at 18pt.
       const above = tboxes.filter((t) => t[3] <= first.y && Math.min(t[2], first.x1) > Math.max(t[0], first.x0)).map((t) => t[3]);
       const top = Math.max(first.y - 18, above.length ? Math.max(...above) + 1 : -Infinity);
@@ -930,6 +1098,55 @@ function detectFields(pg) {
     if (inLines.some((c) => c.src === 'lines') || inLines.length > 1) continue;
     for (const c of inLines) c.drop = true;
     cands.push({ src: 'box', kind: box[3] - box[1] >= TEXTAREA_MIN_H ? 'textarea' : 'input', box, prio: 4 });
+  }
+
+  // 5. Blank space under a question. Plenty of worksheets (LibreOffice and
+  //    PowerPoint ones especially) draw nothing at all for the answer: the
+  //    question, then a few empty lines, then the next question. A field
+  //    goes into the gap when all of this holds:
+  //      - the paragraph above reads as a prompt: it starts with an item
+  //        number ("3. ...", "b) ...") or one of its lines ends in "?";
+  //      - there is more text further down (the bottom margin is not a gap);
+  //      - the gap is at least 24pt and about two of the prompt's own lines;
+  //      - nothing is painted in it. A shape that covers the whole gap is
+  //        page background; anything smaller is a drawing, a box or a rule,
+  //        which the rules above have already judged.
+  //    Lowest priority, so every drawn answer area wins over it.
+  {
+    // Digits only: "A." to "D." are as often the options of a multiple-choice
+    // item as they are sub-questions, and options are not prompts.
+    const NUM = /^\s*\d{1,2}[.)]\s+\S/;
+    const live = spans.filter((s) => !s.angle && s.alpha >= 0.5).slice().sort((a, b) => a.baseline - b.baseline || a.x - b.x);
+    const paras = [];
+    for (const s of live) {
+      const b = textBox(s);
+      // Same paragraph: next line down (or same row), overlapping in x.
+      const pa = paras.find((q) => b[1] - q.box[3] < 0.9 * Math.max(s.size, q.size) && b[3] > q.box[1] &&
+        Math.min(b[2], q.box[2]) > Math.max(b[0], q.box[0]) - 1.5 * s.size);
+      if (pa) {
+        pa.box = [Math.min(pa.box[0], b[0]), Math.min(pa.box[1], b[1]), Math.max(pa.box[2], b[2]), Math.max(pa.box[3], b[3])];
+        pa.cue = pa.cue || /\?\s*$/.test(s.text);
+      } else paras.push({ box: b, size: s.size, cue: NUM.test(s.text) || /\?\s*$/.test(s.text) });
+    }
+    for (const pa of paras) {
+      if (!pa.cue) continue;
+      const [px0, , , py1] = pa.box;
+      const reach = Math.max(pa.box[2], px0 + 150);
+      const below = tboxes.filter((t) => t[1] >= py1 - 1 && Math.min(t[2], reach) > Math.max(t[0], px0));
+      if (!below.length) continue;
+      const nextTop = Math.min(...below.map((t) => t[1]));
+      const gap = nextTop - py1;
+      if (gap < 24 || gap < 1.8 * pa.size) continue;
+      let xr = contentX1;
+      for (const t of tboxes) if (t[3] > py1 + 3 && t[1] < nextTop - 3 && t[0] > px0 + 60) xr = Math.min(xr, t[0] - 6);
+      const box = [px0, py1 + 3, xr, nextTop - 3];
+      if (box[2] - box[0] < 80) continue;
+      const covers = (b) => b[0] <= box[0] && b[1] <= box[1] && b[2] >= box[2] && b[3] >= box[3];
+      // (Not overlap(): a hairline rule has a zero-area bbox.)
+      const touches = (b) => b[0] < box[2] && b[2] > box[0] && b[1] < box[3] && b[3] > box[1];
+      if (shapes.some((sh) => (sh.type === 'path' || sh.type === 'image') && touches(sh.bbox) && !covers(sh.bbox))) continue;
+      cands.push({ src: 'space', kind: box[3] - box[1] >= TEXTAREA_MIN_H ? 'textarea' : 'input', box, prio: 5 });
+    }
   }
 
   // De-duplicate: a lower-priority candidate that overlaps an accepted one
@@ -1055,6 +1272,15 @@ function dotRow(s) {
 
 function renderSvg(pg) {
   const defs = [];
+  // A picture painted more than once is stored once and placed with <use>.
+  const shared = new Map(); // href -> { href, n, id }
+  let sharedSeq = 0;
+  for (const list of [pg.shapes, ...(pg.patterns || []).map((pt) => pt.shapes)]) for (const s of list) {
+    if (s.type !== 'image') continue;
+    const e = shared.get(s.href) || { href: s.href, n: 0, id: null };
+    if (++e.n === 2) e.id = `i${pg.page}-${++sharedSeq}`;
+    shared.set(s.href, e);
+  }
   // Clip chains: each <clipPath> is itself clipped by its parent, which
   // gives the intersection semantics PDF clipping needs.
   for (const c of pg.clips) {
@@ -1067,10 +1293,26 @@ function renderSvg(pg) {
     else if (g.kind === 'radial') defs.push(`<radialGradient id="${g.id}" ${tf} fx="${g.p0[0]}" fy="${g.p0[1]}" fr="${g.r0}" cx="${g.p1[0]}" cy="${g.p1[1]}" r="${g.r1}">${stops}</radialGradient>`);
     else defs.push(`<linearGradient id="${g.id}">${stops}</linearGradient>`);
   }
-  const body = pg.shapes.map((s) => {
+  for (const im of shared.values()) {
+    if (im.id) defs.push(`<image id="${im.id}" href="${im.href}" x="0" y="0" width="1" height="1" preserveAspectRatio="none"/>`);
+  }
+  for (const pt of pg.patterns || []) {
+    defs.push(`<pattern id="${pt.id}" patternUnits="userSpaceOnUse" x="${pt.x}" y="${pt.y}" width="${pt.w}" height="${pt.h}" patternTransform="matrix(${fmtM(pt.transform)})">${pt.shapes.map(shapeSvg).join('')}</pattern>`);
+  }
+  const body = pg.shapes.map(shapeSvg);
+  function shapeSvg(s) {
     const common = (s.clip ? ` clip-path="url(#${s.clip})"` : '') + (s.blend ? ` style="mix-blend-mode:${s.blend}"` : '');
     if (s.type === 'image') {
-      return `<image href="${s.href}" x="0" y="0" width="1" height="1" preserveAspectRatio="none" transform="matrix(${fmtM(s.matrix)})"${s.fa < 1 ? ` opacity="${s.fa}"` : ''}${common}/>`;
+      // The clip goes on a wrapping <g>, never on the <image> itself: a
+      // userSpaceOnUse clip path is resolved in the user space of the element
+      // that references it, i.e. *after* that element's own transform. On the
+      // image that is the unit square scaled up to the picture, so a clip in
+      // page coordinates lands far outside it and the picture vanishes. Word
+      // clips every picture to its frame, so every Word picture was lost.
+      const sh = shared.get(s.href);
+      const img = (sh && sh.id ? `<use href="#${sh.id}"` : `<image href="${s.href}" x="0" y="0" width="1" height="1" preserveAspectRatio="none"`) +
+        ` transform="matrix(${fmtM(s.matrix)})"${s.fa < 1 ? ` opacity="${s.fa}"` : ''}/>`;
+      return common ? `<g${common}>${img}</g>` : img;
     }
     const dots = dotRow(s);
     if (dots) return dots;
@@ -1083,7 +1325,7 @@ function renderSvg(pg) {
       if (s.join) attrs += ` stroke-linejoin="${['miter', 'round', 'bevel'][s.join]}"`;
     }
     return `<path ${attrs}${common}/>`;
-  });
+  }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${pg.width}" height="${pg.height}" viewBox="0 0 ${pg.width} ${pg.height}" aria-hidden="true"><defs>${defs.join('')}</defs>${body.join('')}</svg>`;
 }
 
@@ -1189,4 +1431,4 @@ export async function importPdf(pdfjs, data, opts = {}) {
   }
 }
 
-export const _internal = { parseFontName, detectFields, mergeGlyphs, dotRow };
+export const _internal = { parseFontName, detectFields, mergeGlyphs, dotRow, shrinkFactor, shrink };

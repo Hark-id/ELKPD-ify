@@ -487,7 +487,7 @@ function fieldPanel(f, pg, pi) {
 
   const wrap = h('div', { class: 'insp' },
     h('h2', {}, f.label || 'Isian tanpa nama'),
-    h('p', { class: 'sub' }, `Halaman ${pi + 1} · ${f.source === 'manual' ? 'ditambahkan manual' : 'ditemukan otomatis (' + ({ leader: 'titik-titik', line: 'garis', lines: 'garis tulis', table: 'tabel', box: 'kotak', checkbox: 'kotak centang', acroform: 'formulir PDF' }[f.source] || f.source) + ')'}`),
+    h('p', { class: 'sub' }, `Halaman ${pi + 1} · ${f.source === 'manual' ? 'ditambahkan manual' : 'ditemukan otomatis (' + ({ leader: 'titik-titik', line: 'garis', lines: 'garis tulis', table: 'tabel', box: 'kotak', checkbox: 'kotak centang', acroform: 'formulir PDF', space: 'ruang kosong di bawah soal' }[f.source] || f.source) + ')'}`),
     h('label', { class: 'fld' }, h('span', {}, 'Nama isian'),
       h('input', { type: 'text', value: f.label || '', placeholder: 'mis. Jawaban no. 1', onchange: (e) => edit(() => { f.label = e.target.value.trim(); }) })),
     kinds,
