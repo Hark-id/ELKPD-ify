@@ -59,7 +59,9 @@ export async function launch({ width = 1280, height = 900, port = 9300 + Math.fl
     async goto(url) {
       const loaded = new Promise((r) => { const l = (m) => { if (m.method === 'Page.loadEventFired') { listeners.splice(listeners.indexOf(l), 1); r(); } }; listeners.push(l); });
       await send('Page.navigate', { url });
-      await loaded;
+      let t;
+      await Promise.race([loaded, new Promise((_, j) => { t = setTimeout(() => j(new Error('page load timed out: ' + url)), 30000); })]);
+      clearTimeout(t);
     },
     async eval(expr) {
       const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });

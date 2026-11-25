@@ -24,17 +24,18 @@ async function tx(mode, fn) {
 }
 
 export const store = {
-  async put(key, sheet) {
-    try { await tx('readwrite', (s) => s.put({ key, sheet, title: sheet.title, pages: sheet.pages.length, updated: Date.now() })); return true; }
+  /** meta: { projectId } when the sheet is linked to a project on the server */
+  async put(key, sheet, meta = {}) {
+    try { await tx('readwrite', (s) => s.put({ key, sheet, title: sheet.title, pages: sheet.pages.length, updated: Date.now(), ...meta })); return true; }
     catch { return false; } // private mode, quota: the editor keeps working
   },
   async get(key) {
-    try { const r = await tx('readonly', (s) => s.get(key)); return r ? r.sheet : null; } catch { return null; }
+    try { const r = await tx('readonly', (s) => s.get(key)); return r || null; } catch { return null; }
   },
   async list() {
     try {
       const all = await tx('readonly', (s) => s.getAll());
-      return (all || []).map(({ key, title, pages, updated }) => ({ key, title, pages, updated })).sort((a, b) => b.updated - a.updated);
+      return (all || []).map(({ key, title, pages, updated, projectId }) => ({ key, title, pages, updated, projectId })).sort((a, b) => b.updated - a.updated);
     } catch { return []; }
   },
   async remove(key) {

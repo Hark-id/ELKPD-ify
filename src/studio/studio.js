@@ -11,6 +11,7 @@ import { importPdf } from '../sheet/import.js';
 import { createPlayer } from '../sheet/player.js';
 import { buildStandaloneHtml } from './export.js';
 import { store } from './store.js';
+import { cloud, refreshMe, authDialog, logout, projects } from './cloud.js';
 
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38';
 const $ = (id) => document.getElementById(id);
@@ -33,13 +34,82 @@ let drawing = false;
 let zoom = null;      // null = fit width
 let player = null;
 let previewValues = {};
+let project = null;   // { id, role } when this sheet is published to an account
+let classData = null; // { rooms: [...] } from /answers, refreshed while in the Kelas tab
+let classRoom = null; // selected room id in the Kelas tab
+let classTimer = 0;
 const undo = [], redo = [];
+
+// Student mode (#15): /studio/?untuk=kelompok turns a PDF into a group room
+// with no account; /studio/?ruang=edit fixes the sheet of the room this
+// browser is in. Both end in a room, not in an account's project.
+const QS = new URLSearchParams(location.search);
+const GROUP = QS.get('untuk') === 'kelompok';
+const ROOM_EDIT = QS.get('ruang') === 'edit';
+const STUDENT = GROUP || ROOM_EDIT;
 
 // ------------------------------------------------------------ helpers
 function show(view) {
   for (const v of ['start', 'busy', 'editor']) $(v).hidden = v !== view;
   const inEditor = view === 'editor';
   $('title').hidden = $('modeSeg').hidden = $('exportBtn').hidden = $('undoBtn').hidden = !inEditor;
+  $('classTab').hidden = !inEditor || !project;
+  $('publishItem').hidden = !cloud.available;
+  if (STUDENT) {
+    $('exportBtn').textContent = ROOM_EDIT ? 'Simpan ke ruang' : 'Buat ruang';
+    $('exportBtn').removeAttribute('aria-haspopup');
+    $('accountBtn').hidden = true;
+  }
+  if (!inEditor) stopClassPolling();
+}
+
+// A small in-app text dialog (the auth dialog's look); resolves the text,
+// or null when cancelled.
+function askText({ title, sub, label, placeholder, ok }) {
+  return new Promise((resolve) => {
+    const input = h('input', { type: 'text', maxlength: '60', placeholder: placeholder || '', id: 'askInput' });
+    const done = (v) => { scrim.remove(); resolve(v); };
+    const scrim = h('div', { class: 'scrim', onclick: (e) => { if (e.target === scrim) done(null); } },
+      h('form', { class: 'dialog', id: 'askForm', onsubmit: (e) => { e.preventDefault(); done(input.value.trim()); } },
+        h('h2', { style: 'margin:0;font-size:22px;font-weight:500' }, title),
+        sub ? h('p', { class: 'sub' }, sub) : null,
+        h('label', { class: 'fld' }, h('span', {}, label), input),
+        h('div', { class: 'row end' },
+          h('button', { class: 'btn text', type: 'button', onclick: () => done(null) }, 'Batal'),
+          h('button', { class: 'btn filled', type: 'submit' }, ok))));
+    document.body.appendChild(scrim);
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
+// One step from a reviewed sheet to a live room (group mode), or back into
+// the room after fixing its sheet (room edit mode).
+async function studentAction() {
+  const btn = $('exportBtn');
+  btn.disabled = true;
+  try {
+    if (ROOM_EDIT) {
+      const r = await fetch('/api/room/sheet', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || 'HTTP ' + r.status);
+      location.href = '/';
+      return;
+    }
+    const label = await askText({ title: 'Buat ruang kelompok', sub: 'Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Jawaban tersimpan di ruang ini.',
+      label: 'Nama kelompok (boleh dikosongkan)', placeholder: 'mis. Kelompok 3', ok: 'Buat ruang' });
+    if (label === null) return;
+    const r = await fetch('/api/rooms/from-sheet?label=' + encodeURIComponent(label.trim()), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(r.status === 404 ? 'Server ini belum mendukung ruang dari PDF.' : (d.error || 'HTTP ' + r.status));
+    // The response set this browser's room session: the gate now serves
+    // the room. The code is shown there, in the tool bar, to share.
+    try { sessionStorage.setItem('esh-new-room', JSON.stringify(d.room)); } catch {}
+    location.href = '/';
+  } catch (e) {
+    snack('Gagal: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 let snackTimer = 0;
@@ -133,7 +203,7 @@ function afterHistory() {
 }
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => store.put(docKey, sheet), 400);
+  saveTimer = setTimeout(() => store.put(docKey, sheet, project ? { projectId: project.id } : {}), 400);
 }
 
 // ----------------------------------------------------------- import
@@ -184,11 +254,14 @@ async function importBytes(bytes, name) {
   }
 }
 
-function openSheet(s, key) {
+function openSheet(s, key, proj = null) {
   if (!s || s.format !== 'elkpd-sheet' || !Array.isArray(s.pages)) { snack('Berkas ini bukan berkas lembar yang valid.'); return; }
   sheet = s;
   pagePool.clear();
   for (const p of s.pages) pagePool.set(p.id, p);
+  project = proj;
+  classData = null;
+  classRoom = null;
   docKey = key || ((s.source && s.source.sha256) ? 'sha-' + s.source.sha256.slice(0, 16) : 'doc-' + Date.now());
   undo.length = redo.length = 0;
   selected = null;
@@ -197,8 +270,11 @@ function openSheet(s, key) {
   $('undoBtn').disabled = true;
   show('editor'); // before rendering: the player measures text, which needs layout
   setMode('design');
-  store.put(docKey, sheet);
+  store.put(docKey, sheet, project ? { projectId: project.id } : {});
   history.replaceState(null, '', '#' + encodeURIComponent(docKey));
+  updatePublishItem();
+  // The saved record only remembers the project; ask the server for our role.
+  if (project && cloud.available) projects.info(project.id).then((r) => { project.role = r.role; }, () => {});
 }
 
 // ----------------------------------------------------------- render
@@ -206,13 +282,25 @@ function renderSheet() {
   const canvas = $('canvas');
   const top = canvas.scrollTop;
   if (player) player.destroy();
+  player = null;
   canvas.classList.toggle('design', mode === 'design');
   canvas.classList.toggle('preview', mode === 'preview');
+  if (mode === 'class') {
+    const room = classData && classData.rooms.find((r) => r.id === classRoom);
+    if (!room) {
+      canvas.textContent = '';
+      canvas.append(h('p', { class: 'empty-canvas' }, classData && classData.rooms.length ? 'Pilih ruang di kanan untuk melihat jawaban kelompok itu secara langsung.'
+        : 'Buat ruang untuk tiap kelompok di panel kanan. Siswa bergabung dengan kodenya, tanpa akun.'));
+      updateZoomLabel();
+      return;
+    }
+  }
+  const classValues = mode === 'class' ? (classData.rooms.find((r) => r.id === classRoom) || {}).answers : null;
   player = createPlayer(canvas, sheet, {
-    readOnly: mode === 'design',
+    readOnly: mode === 'design' || mode === 'class',
     bare: mode === 'design',
     scale: zoom,
-    values: mode === 'preview' ? previewValues : null,
+    values: mode === 'preview' ? previewValues : classValues,
     onInput: (id, v) => {
       previewValues[id] = v;
       const b = $('inspector').querySelector('.stat b');
@@ -226,7 +314,7 @@ function renderSheet() {
 }
 
 function updateZoomLabel() {
-  $('zoomLabel').textContent = Math.round((player ? player.scale : 1) * 100) + '%';
+  $('zoomLabel').textContent = player ? Math.round(player.scale * 100) + '%' : '';
 }
 
 // One overlay per page, inside the scaled page element, so overlay
@@ -426,6 +514,7 @@ function renderInspector() {
   const box = $('inspector');
   box.textContent = '';
   if (mode === 'preview') { box.append(previewPanel()); return; }
+  if (mode === 'class') { box.append(classPanel()); return; }
   const hit = selected && findField(selected);
   box.append(hit ? fieldPanel(hit.f, hit.pg, hit.pi) : overviewPanel());
 }
@@ -548,11 +637,185 @@ function remove(id) {
   snack('Isian dihapus.', { label: 'Urungkan', run: doUndo });
 }
 
+// ------------------------------------------------------- publish + class
+function updatePublishItem() {
+  $('publishItem').hidden = !cloud.available;
+  $('publishLabel').textContent = project ? 'Terbitkan perubahan' : 'Terbitkan untuk kelas';
+  $('publishNote').textContent = project
+    ? 'Semua ruang kelompok langsung memakai versi baru. Jawaban tetap tersimpan.'
+    : 'Simpan ke akun Anda, lalu buat ruang untuk tiap kelompok.';
+  $('classTab').hidden = $('editor').hidden || !project;
+}
+
+async function publish() {
+  if (!cloud.user && !(await authDialog('login'))) return;
+  try {
+    if (project) {
+      const r = await projects.publish(project.id, sheet);
+      snack(`Versi ${r.version} diterbitkan. Ruang kelompok memakai versi ini saat dibuka ulang.`);
+    } else {
+      const r = await projects.create(sheet);
+      project = { id: r.id, role: 'owner' };
+      scheduleSave();
+      updatePublishItem();
+      refreshMe();
+      snack('Lembar diterbitkan ke akun Anda.', { label: 'Buat ruang', run: () => setMode('class') });
+    }
+  } catch (e) {
+    snack('Gagal menerbitkan: ' + e.message);
+  }
+}
+
+async function openProject(id, role) {
+  show('busy');
+  $('busyTitle').textContent = 'Membuka proyek…';
+  $('busyNote').textContent = '';
+  $('busyBar').style.width = '60%';
+  try {
+    const { sheet: s } = await projects.sheet(id);
+    openSheet(s, 'prj-' + id, { id, role });
+  } catch (e) {
+    show('start');
+    snack(e.message);
+  }
+}
+
+async function loadClass() {
+  if (!project) return;
+  try {
+    classData = await projects.answers(project.id);
+    if (classRoom && !classData.rooms.some((r) => r.id === classRoom)) classRoom = null;
+    if (!classRoom && classData.rooms.length) classRoom = classData.rooms[0].id;
+  } catch (e) {
+    classData = classData || { rooms: [] };
+    snack('Gagal memuat ruang: ' + e.message);
+  }
+}
+
+// Live view: poll the answers while the Kelas tab is open. Values update in
+// place (no re-render) so scrolling and zoom stay put.
+async function classTick() {
+  if (mode !== 'class') return;
+  const before = classRoom;
+  await loadClass();
+  if (mode !== 'class') return;
+  const room = classData.rooms.find((r) => r.id === classRoom);
+  if (player && room && before === classRoom) player.setValues({ ...emptyValues(), ...room.answers });
+  else renderSheet();
+  renderInspector();
+}
+const emptyValues = () => Object.fromEntries(allFields().map((x) => [x.f.id, '']));
+function startClassPolling() {
+  stopClassPolling();
+  classTick();
+  classTimer = setInterval(classTick, 4000);
+}
+function stopClassPolling() { clearInterval(classTimer); classTimer = 0; }
+
+function classPanel() {
+  const total = allFields().length;
+  const rooms = (classData && classData.rooms) || [];
+  const canEdit = project && project.role !== 'viewer';
+  const wrap = h('div', { class: 'insp' },
+    h('h2', {}, 'Ruang kelompok'),
+    h('p', { class: 'sub' }, 'Satu ruang untuk tiap kelompok. Bagikan kode atau tautannya; anggota kelompok mengisi lembar yang sama secara langsung, tanpa akun.'));
+  if (!classData) { wrap.append(h('p', { class: 'sub' }, 'Memuat…')); return wrap; }
+  if (canEdit) {
+    const input = h('input', { type: 'text', placeholder: `Kelompok ${rooms.length + 1}`, maxlength: '60' });
+    wrap.append(h('form', { class: 'row', style: 'margin:0 0 16px', onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        const r = await projects.addRoom(project.id, input.value.trim() || `Kelompok ${rooms.length + 1}`);
+        classRoom = r.room.id;
+        await classTick();
+        snack(`Ruang dibuat. Kode: ${r.room.code}`);
+      } catch (err) { snack(err.message); }
+    } }, h('label', { class: 'fld', style: 'flex:1;margin:0' }, input), h('button', { class: 'btn filled', type: 'submit' }, 'Buat ruang')));
+  }
+  for (const r of rooms) {
+    const filled = Object.values(r.answers || {}).filter((v) => v !== '' && v != null).length;
+    const pct = total ? Math.round((100 * filled) / total) : 0;
+    const link = `${location.origin}/j/${r.code}`;
+    wrap.append(h('div', { class: 'room-card' + (r.id === classRoom ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button')) return; classRoom = r.id; renderSheet(); renderInspector(); } },
+      h('div', { class: 'rc-top' }, h('span', { class: 'rc-label' }, r.label), r.code ? h('code', {}, r.code) : null),
+      h('div', { class: 'rc-meta' },
+        h('span', { class: 'live' + (r.peers.length ? '' : ' off') }, r.peers.length ? `${r.peers.length} online: ${r.peers.map((p) => p.name).join(', ')}` : 'tidak ada yang online'),
+        h('span', {}, r.error ? 'jawaban gagal dimuat' : `${filled}/${total} isian`)),
+      h('div', { class: 'progress' }, h('i', { style: `width:${pct}%` })),
+      r.id === classRoom ? h('div', { class: 'row', style: 'margin-top:10px' },
+        r.code ? h('button', { class: 'btn tonal', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(link); snack('Tautan disalin: ' + link); } catch { snack(link); } } }, 'Salin tautan') : null,
+        canEdit ? h('button', { class: 'btn text', type: 'button', onclick: async () => { if (!confirm(`Kosongkan semua jawaban ${r.label}?`)) return; await projects.resetRoom(project.id, r.id); classTick(); } }, 'Kosongkan') : null,
+        canEdit ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (!confirm(`Hapus ${r.label}? Kode ${r.code} tidak bisa dipakai lagi dan jawabannya hilang.`)) return; await projects.removeRoom(project.id, r.id); classRoom = null; classTick(); } }, 'Hapus') : null) : null));
+  }
+  if (rooms.length) {
+    wrap.append(h('div', { class: 'row', style: 'margin:8px 0 20px' },
+      h('button', { class: 'btn text', type: 'button', onclick: () => exportCsv(rooms) }, 'Unduh semua jawaban (.csv)')));
+  }
+  if (project.role === 'owner') wrap.append(sharePanel());
+  return wrap;
+}
+
+function exportCsv(rooms) {
+  const fields = allFields().map((x) => x.f);
+  // Quote every cell, and defuse spreadsheet formulas: a student can type
+  // =HYPERLINK(...) as an answer, and Excel would run it on the teacher's PC.
+  const q = (v) => { let t = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""')}"`; };
+  const rows = [['Ruang', 'Kode', ...fields.map((f) => f.label || f.id)].map(q).join(',')];
+  for (const r of rooms) rows.push([r.label, r.code, ...fields.map((f) => (f.kind === 'checkbox' ? (r.answers[f.id] ? 'ya' : '') : r.answers[f.id]))].map(q).join(','));
+  // BOM so Excel opens UTF-8 (Indonesian text) correctly
+  download(slug(sheet.title) + '-jawaban.csv', '\ufeff' + rows.join('\r\n'), 'text/csv;charset=utf-8');
+}
+
+function sharePanel() {
+  const box = h('div', {}, h('span', { class: 'pagehead', style: 'margin-left:2px' }, 'Akses guru lain'));
+  const list = h('div', {});
+  box.append(list);
+  const fill = async () => {
+    list.textContent = '';
+    const { project: info } = await projects.info(project.id);
+    for (const m of info.members) {
+      if (m.role === 'owner') { list.append(h('div', { class: 'member' }, h('b', {}, '@' + m.username), h('span', { class: 'r-role' }, 'pemilik'))); continue; }
+      const sel = h('select', { 'aria-label': 'Peran ' + m.username, onchange: async (e) => { try { await projects.share(project.id, m.username, e.target.value || null); fill(); } catch (err) { snack(err.message); } } },
+        h('option', { value: 'editor', selected: m.role === 'editor' }, 'Penyunting'), h('option', { value: 'viewer', selected: m.role === 'viewer' }, 'Pemeriksa'), h('option', { value: '' }, 'Hapus akses'));
+      list.append(h('div', { class: 'member' }, h('b', {}, '@' + m.username), sel));
+    }
+  };
+  fill().catch(() => {});
+  const user = h('input', { type: 'text', placeholder: 'nama pengguna', spellcheck: 'false', autocapitalize: 'none' });
+  const role = h('select', {}, h('option', { value: 'editor' }, 'Penyunting'), h('option', { value: 'viewer' }, 'Pemeriksa'));
+  box.append(h('form', { class: 'row', style: 'margin-top:8px', onsubmit: async (e) => {
+    e.preventDefault();
+    try { await projects.share(project.id, user.value.trim(), role.value); user.value = ''; fill(); snack('Akses diberikan.'); } catch (err) { snack(err.message); }
+  } }, h('label', { class: 'fld', style: 'flex:1;margin:0' }, user), h('label', { class: 'fld', style: 'margin:0' }, role), h('button', { class: 'btn tonal', type: 'submit' }, 'Bagikan')));
+  box.append(h('p', { class: 'sub', style: 'margin-top:8px' }, 'Penyunting bisa mengubah lembar dan membuat ruang. Pemeriksa hanya melihat jawaban.'));
+  return box;
+}
+
+async function renderCloudStart() {
+  const box = $('cloudBox');
+  box.hidden = !cloud.available;
+  if (!cloud.available) return;
+  const list = $('projectList');
+  list.textContent = '';
+  $('loginBtn').hidden = !!cloud.user;
+  if (!cloud.user) { $('cloudNote').textContent = 'Masuk untuk menerbitkan lembar ke kelas: siswa bergabung dengan kode dan mengisi bersama.'; return; }
+  $('cloudNote').textContent = cloud.projects.length ? '' : 'Belum ada proyek. Impor PDF, lalu pilih Simpan & bagikan → Terbitkan untuk kelas.';
+  const ROLE = { owner: 'pemilik', editor: 'penyunting', viewer: 'pemeriksa' };
+  for (const p of cloud.projects) {
+    list.append(h('li', {}, h('button', { type: 'button', onclick: () => openProject(p.id, p.role) },
+      h('span', { class: 'r-title' }, p.title || 'Tanpa judul'),
+      h('span', { class: 'r-role' }, ROLE[p.role] || p.role),
+      h('span', { class: 'r-meta' }, new Date(p.updated).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })))));
+  }
+}
+
 // --------------------------------------------------------------- mode
 function setMode(m) {
   mode = m;
+  if (m === 'class') startClassPolling(); else stopClassPolling();
   for (const b of $('modeSeg').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.mode === m));
   $('toolbar').querySelector('#addTool').hidden = m !== 'design';
+  $('tbNote').hidden = m === 'class';
   setDrawing(false);
   if (sheet) { renderSheet(); renderInspector(); }
 }
@@ -563,7 +826,7 @@ async function showRecent() {
   $('recent').hidden = !list.length;
   $('recentList').textContent = '';
   for (const r of list.slice(0, 8)) {
-    $('recentList').append(h('li', {}, h('button', { type: 'button', onclick: async () => { const s = await store.get(r.key); if (s) openSheet(s, r.key); } },
+    $('recentList').append(h('li', {}, h('button', { type: 'button', onclick: async () => { const rec = await store.get(r.key); if (rec) openSheet(rec.sheet, r.key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); } },
       h('span', { class: 'r-title' }, r.title || 'Tanpa judul'),
       h('span', { class: 'r-meta' }, `${r.pages} hlm · ${new Date(r.updated).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`))));
   }
@@ -594,8 +857,19 @@ function init() {
   $('zoomIn').addEventListener('click', () => zoomBy(0.1));
   $('zoomOut').addEventListener('click', () => zoomBy(-0.1));
 
+  $('loginBtn').addEventListener('click', async () => { if (await authDialog('login')) renderCloudStart(); });
+  const amenu = $('accountMenu');
+  $('accountBtn').addEventListener('click', (e) => { e.stopPropagation(); amenu.hidden = !amenu.hidden; });
+  addEventListener('click', (e) => { if (!amenu.hidden && !amenu.contains(e.target)) amenu.hidden = true; });
+  $('logoutBtn').addEventListener('click', async () => { amenu.hidden = true; await logout(); updatePublishItem(); renderCloudStart(); snack('Anda telah keluar.'); });
+
   const menu = $('exportMenu');
-  $('exportBtn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) menu.querySelector('button').focus(); });
+  $('exportBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (STUDENT) { studentAction(); return; }
+    menu.hidden = !menu.hidden;
+    if (!menu.hidden) menu.querySelector('button').focus();
+  });
   addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
   menu.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
@@ -608,7 +882,8 @@ function init() {
       download(name + '.html', await buildStandaloneHtml(sheet), 'text/html');
       snack(missing ? `Tersimpan. ${missing} isian belum diberi nama.` : 'Tersimpan. Bagikan berkas .html ini ke siswa.');
     }
-    if (b.dataset.export === 'new') { history.replaceState(null, '', location.pathname); show('start'); showRecent(); }
+    if (b.dataset.export === 'new') { history.replaceState(null, '', location.pathname); show('start'); showRecent(); renderCloudStart(); }
+    if (b.dataset.export === 'publish') publish();
   });
 
   addEventListener('keydown', (e) => {
@@ -629,10 +904,32 @@ function init() {
     if (d) { e.preventDefault(); commit(() => { hit.f.x = r1(hit.f.x + d[0]); hit.f.y = r1(hit.f.y + d[1]); }); }
   });
 
+  if (GROUP) {
+    document.querySelector('.drop h1').textContent = 'Buat ruang kelompok dari PDF guru';
+    document.querySelector('.drop p').textContent = 'Seret PDF lembar kerja ke sini, atau pilih berkas. Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Tidak perlu akun.';
+    $('openJsonBtn').hidden = true;
+    document.querySelector('.start-row .dot').hidden = true;
+  }
+  if (ROOM_EDIT) {
+    show('busy');
+    $('busyTitle').textContent = 'Membuka lembar ruang…';
+    fetch('/api/room/sheet', { credentials: 'same-origin', cache: 'no-store' }).then(async (r) => {
+      if (r.headers.get('X-Sheet-Editable') !== '1') throw new Error(r.status === 401 ? 'Masuk ke ruang dulu.' : 'Lembar ini dikelola guru, tidak bisa diubah dari ruang.');
+      openSheet(await r.json(), 'room-edit');
+    }).catch((e) => { show('start'); snack(e.message); });
+    return;
+  }
+
   // Reopen the sheet in the URL hash (a reload keeps you where you were).
   const key = decodeURIComponent(location.hash.slice(1));
-  if (key) store.get(key).then((s) => { if (s) openSheet(s, key); else showRecent(); });
-  else showRecent();
+  const home = () => { showRecent(); if (!GROUP) renderCloudStart(); };
+  refreshMe().then(() => {
+    if (GROUP) { $('accountBtn').hidden = true; $('publishItem').hidden = true; return; }
+    if (!$('start').hidden) renderCloudStart();
+    updatePublishItem();
+  });
+  if (key) store.get(key).then((rec) => { if (rec) openSheet(rec.sheet, key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); else home(); });
+  else home();
 }
 
 init();

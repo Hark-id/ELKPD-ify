@@ -1,5 +1,6 @@
 import { LANDING_HTML } from "./landing.js";
 import { ADMIN_HTML } from "./admin.js";
+import { projectsApi, releaseRoom, LEGACY_PROJECT } from "./projects.js";
 
 /* ------------------------------------------------------------------
    Group worksheet — access gate + real-time collaboration
@@ -229,6 +230,12 @@ async function gateHandler(request, env) {
     /* ---------------- resolve session ---------------- */
     const session = await verifySession(secret, readCookie(request, COOKIE));
 
+    /* ---------------- accounts + projects (#3): projects.js ---------------- */
+    // Student rooms (#15) mint room sessions the same way /api/create does.
+    const issueRoomCookie = async (roomId) => sessionCookie(await makeSession(secret, roomId), url);
+    const projectResponse = await projectsApi(request, env, url, session, { issueRoomCookie });
+    if (projectResponse) return projectResponse;
+
     /* ---------------- websocket ---------------- */
     if (url.pathname === "/ws") {
       if (!session || session.roomId === "admin-console") return new Response("unauthorized", { status: 401 });
@@ -288,10 +295,9 @@ async function gateHandler(request, env) {
       if (url.pathname === "/api/admin/delete" && request.method === "POST") {
         const roomId = await roomIdOf();
         if (!roomId) return Response.json({ ok: false }, { status: 400 });
-        await roomStub(roomId).fetch("https://room/reset-http", { method: "POST" });  /* purge answers */
-        await (await registry()).fetch("https://registry/delete-room", {
-          method: "POST", body: JSON.stringify({ roomId })
-        });
+        /* purge answers, free the code, and drop the room from its project
+           (a student sheet with no rooms left goes too): projects.js */
+        await releaseRoom(env, roomId);
         return Response.json({ ok: true });
       }
       if (url.pathname === "/api/admin/report-clear" && request.method === "POST") {
@@ -335,27 +341,33 @@ async function gateHandler(request, env) {
     }
 
     /* ---------------- authenticated: the worksheet ---------------- */
-    const asset = await env.ASSETS.fetch(new URL("/worksheet.html", url));
-    let html = await asset.text();
-
     // Resolve this room's own name/code from the registry so every
     // group sees its own identity, never the deployment defaults.
     let label = env.ROOM_LABEL || "Kelompok";
     let code = "";
+    let projectId = LEGACY_PROJECT;
     try {
       const info = await (await registry()).fetch("https://registry/by-room", {
         method: "POST",
         body: JSON.stringify({ roomId: session.roomId }),
       }).then(r => r.json());
-      if (info.ok) { label = info.label; code = info.code; }
+      if (info.ok) { label = info.label; code = info.code; projectId = info.projectId || LEGACY_PROJECT; }
     } catch { /* fall back to the deployment default label */ }
+
+    // A project room serves the project's imported sheet in the player
+    // (src/sheet/room.html); every other room keeps the hand-built LKPD.
+    const page = projectId === LEGACY_PROJECT ? "/worksheet.html" : "/sheet/room.html";
+    const asset = await env.ASSETS.fetch(new URL(page, url));
+    let html = await asset.text();
 
     // Room scoping is injected server-side so the client cannot claim
     // a different room than the one its session was signed for.
+    // Function replacers: a string replacement honours $-patterns, so a
+    // label like "$`" would splice the page into itself.
     html = html
-      .replaceAll("__ROOM_ID__", escHtml(session.roomId))
-      .replaceAll("__ROOM_LABEL__", escHtml(label))
-      .replaceAll("__ROOM_CODE__", escHtml(code));
+      .replaceAll("__ROOM_ID__", () => escHtml(session.roomId))
+      .replaceAll("__ROOM_LABEL__", () => escHtml(label))
+      .replaceAll("__ROOM_CODE__", () => escHtml(code));
 
     return new Response(html, {
       headers: {

@@ -10,6 +10,19 @@ class_name = "WorksheetRoom"
 name = "REGISTRY"
 class_name = "RoomRegistry"
 
+[[durable_objects.bindings]]
+name = "ACCOUNTS"
+class_name = "AccountStore"
+
+[[durable_objects.bindings]]
+name = "PROJECT"
+class_name = "Project"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WorksheetRoom", "RoomRegistry"]
+
+# Accounts + projects (#3, docs/design/projects.md)
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["AccountStore", "Project"]

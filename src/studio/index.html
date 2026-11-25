@@ -19,10 +19,17 @@
   <div class="seg" id="modeSeg" role="radiogroup" aria-label="Mode" hidden>
     <button type="button" role="radio" aria-checked="true" data-mode="design">Sunting</button>
     <button type="button" role="radio" aria-checked="false" data-mode="preview">Coba isi</button>
+    <button type="button" role="radio" aria-checked="false" data-mode="class" id="classTab" hidden>Kelas</button>
   </div>
   <button class="btn tonal" id="undoBtn" type="button" title="Urungkan (Ctrl+Z)" hidden disabled>Urungkan</button>
   <button class="btn filled" id="exportBtn" type="button" aria-haspopup="menu" hidden>Simpan &amp; bagikan</button>
+  <button class="avatar" id="accountBtn" type="button" hidden aria-haspopup="menu" title="Akun"></button>
+  <div class="menu" id="accountMenu" role="menu" hidden>
+    <p class="menu-head" id="accountName"></p>
+    <button type="button" role="menuitem" id="logoutBtn"><b>Keluar</b></button>
+  </div>
   <div class="menu" id="exportMenu" role="menu" hidden>
+    <button type="button" role="menuitem" data-export="publish" id="publishItem" hidden><b id="publishLabel">Terbitkan untuk kelas</b><span id="publishNote">Simpan ke akun Anda, lalu buat ruang untuk tiap kelompok.</span></button>
     <button type="button" role="menuitem" data-export="html"><b>Lembar siap pakai (.html)</b><span>Satu file: bisa dibuka di HP, diisi, dicetak.</span></button>
     <button type="button" role="menuitem" data-export="json"><b>Berkas lembar (.json)</b><span>Untuk disunting lagi di Studio.</span></button>
     <button type="button" role="menuitem" data-export="new"><b>Impor PDF lain</b><span>Lembar ini tetap tersimpan di peramban.</span></button>
@@ -44,6 +51,11 @@
       <button class="btn text" id="sampleBtn" type="button">Coba dengan contoh lembar</button>
       <span class="dot" aria-hidden="true"></span>
       <button class="btn text" id="openJsonBtn" type="button">Buka berkas lembar (.json)</button>
+    </div>
+    <div class="recent" id="cloudBox" hidden>
+      <div class="cloud-head"><h2>Proyek saya</h2><button class="btn tonal" id="loginBtn" type="button" hidden>Masuk / daftar</button></div>
+      <p class="cloud-note" id="cloudNote"></p>
+      <ul id="projectList"></ul>
     </div>
     <div class="recent" id="recent" hidden>
       <h2>Terakhir dibuka</h2>
@@ -81,6 +93,22 @@
     </div>
   </section>
 </main>
+
+<div class="scrim" id="authScrim" hidden>
+  <form class="dialog" id="authForm" autocomplete="on">
+    <div class="seg auth-seg" role="tablist">
+      <button type="button" role="tab" aria-checked="true" data-auth="login">Masuk</button>
+      <button type="button" role="tab" aria-checked="false" data-auth="register">Daftar</button>
+    </div>
+    <p class="sub" id="authSub">Akun untuk guru: simpan lembar, buat ruang kelompok, dan lihat jawaban. Siswa tidak perlu akun.</p>
+    <label class="fld"><span>Nama pengguna</span><input id="authUser" name="username" type="text" autocomplete="username" required spellcheck="false" autocapitalize="none"></label>
+    <label class="fld" id="authDisplayFld" hidden><span>Nama tampilan</span><input id="authDisplay" type="text" autocomplete="name" placeholder="mis. Bu Sari"></label>
+    <label class="fld"><span>Kata sandi</span><input id="authPass" name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+    <label class="fld" id="authCodeFld" hidden><span>Kode pendaftaran</span><input id="authCode" type="text" autocomplete="off"><small>Diberikan oleh admin sekolah.</small></label>
+    <p class="form-err" id="authErr" hidden></p>
+    <div class="row end"><button class="btn text" type="button" id="authCancel">Batal</button><button class="btn filled" type="submit" id="authSubmit">Masuk</button></div>
+  </form>
+</div>
 
 <div class="snackbar" id="snack" role="status" aria-live="polite" hidden></div>
 
