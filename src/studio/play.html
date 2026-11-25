@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pratinjau lembar</title>
+<style>
+  html,body{margin:0;background:#e7eaee;font-family:Arimo,Arial,sans-serif}
+  #sheet{padding:16px 8px}
+  #msg{padding:24px;color:#444}
+  @media print{#sheet{padding:0}html,body{background:#fff}}
+</style>
+</head>
+<body>
+<div id="msg">Memuat…</div>
+<div id="sheet"></div>
+<script type="module">
+  // Standalone player: ?sheet=<url of a sheet.json>. Answers stay in this
+  // browser (localStorage), keyed by the sheet's source hash.
+  import { createPlayer } from '../sheet/player.js';
+  const q = new URLSearchParams(location.search);
+  const msg = document.getElementById('msg');
+  try {
+    const sheet = await (await fetch(q.get('sheet'))).json();
+    document.title = sheet.title;
+    const key = 'esh-answers:' + ((sheet.source && sheet.source.sha256) || sheet.title);
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch {}
+    window.player = createPlayer(document.getElementById('sheet'), sheet, {
+      values: saved, bare: q.has('bare'),
+      onInput() { try { localStorage.setItem(key, JSON.stringify(window.player.values())); } catch {} },
+    });
+    msg.remove();
+  } catch (e) {
+    msg.textContent = 'Gagal memuat lembar: ' + e.message;
+  }
+</script>
+</body>
+</html>

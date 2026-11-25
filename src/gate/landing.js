@@ -255,6 +255,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
     text-indent:.34em;
   }
   .warn{margin:14px 2px 0;font-size:12px;line-height:1.55;color:var(--error)}
+  .pdf-link{display:block;margin:14px 2px 0;text-align:center;font-size:13px;font-weight:600;color:var(--primary);text-decoration:underline;text-underline-offset:3px;-webkit-tap-highlight-color:transparent;border-radius:8px}
+  .pdf-link:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
   .foot{
     margin:20px 0 0;
     font-size:11px;line-height:1.6;color:var(--on-surface-variant);
@@ -337,6 +339,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
     </div>
     <p class="support">Kode dibuat otomatis. Bagikan hanya kepada anggota kelompok Anda.</p>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
+    <!-- student rooms (#15): bring the teacher's PDF instead of this sheet -->
+    <a class="pdf-link" href="/studio/?untuk=kelompok">Punya PDF dari guru? Buat ruang dari PDF</a>
     <p class="err" id="err-new"></p>
 
     <div id="created" hidden>
@@ -408,6 +412,15 @@ export const LANDING_HTML = `<!DOCTYPE html>
     };
     codeInput.addEventListener('input', upperCode);
     codeInput.addEventListener('blur', upperCode);
+    /* join links (/j/CODE redirect here as ?code=CODE): fill the code in
+       so the student only presses the button */
+    try {
+      var linked = new URLSearchParams(location.search).get('code');
+      if (linked && /^[A-Za-z0-9 -]{1,20}$/.test(linked)) {
+        codeInput.value = linked.toUpperCase();
+        history.replaceState(null, '', location.pathname);
+      }
+    } catch (e) { /* old browser: type it */ }
   }
   var indicator = document.querySelector('.indicator');
   var tabsBox = document.querySelector('.tabs');
