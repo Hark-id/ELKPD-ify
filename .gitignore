@@ -49,3 +49,6 @@ build/
 
 # ---- local webhook credentials (never commit) ----
 .webhook-local.env
+
+# ---- scripts/pdf-import spike output (regenerate with npm run demo / lkpd) ----
+scripts/pdf-import/out/
