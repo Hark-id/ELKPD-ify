@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELKPD Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700&display=swap">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+<header class="appbar">
+  <a class="brand" href="./" aria-label="ELKPD Studio">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">ELKPD <b>Studio</b></span>
+  </a>
+  <input id="title" class="title-input" type="text" placeholder="Judul lembar" aria-label="Judul lembar" hidden spellcheck="false">
+  <div class="appbar-spacer"></div>
+  <div class="seg" id="modeSeg" role="radiogroup" aria-label="Mode" hidden>
+    <button type="button" role="radio" aria-checked="true" data-mode="design">Sunting</button>
+    <button type="button" role="radio" aria-checked="false" data-mode="preview">Coba isi</button>
+  </div>
+  <button class="btn tonal" id="undoBtn" type="button" title="Urungkan (Ctrl+Z)" hidden disabled>Urungkan</button>
+  <button class="btn filled" id="exportBtn" type="button" aria-haspopup="menu" hidden>Simpan &amp; bagikan</button>
+  <div class="menu" id="exportMenu" role="menu" hidden>
+    <button type="button" role="menuitem" data-export="html"><b>Lembar siap pakai (.html)</b><span>Satu file: bisa dibuka di HP, diisi, dicetak.</span></button>
+    <button type="button" role="menuitem" data-export="json"><b>Berkas lembar (.json)</b><span>Untuk disunting lagi di Studio.</span></button>
+    <button type="button" role="menuitem" data-export="new"><b>Impor PDF lain</b><span>Lembar ini tetap tersimpan di peramban.</span></button>
+  </div>
+</header>
+
+<main id="app">
+  <!-- 1. start: drop a PDF -->
+  <section class="start" id="start">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Pilih PDF lembar kerja">
+      <div class="drop-art" aria-hidden="true">
+        <svg viewBox="0 0 96 96"><rect x="20" y="10" width="56" height="74" rx="8"/><path d="M32 34h32M32 46h32M32 58h20"/><circle cx="68" cy="68" r="16"/><path d="M68 60v16M60 68h16"/></svg>
+      </div>
+      <h1>Ubah PDF lembar kerja jadi lembar yang bisa diisi bersama</h1>
+      <p>Seret PDF ke sini, atau <span class="link">pilih berkas</span>. PDF diproses di peramban Anda dan tidak diunggah ke mana pun.</p>
+      <input id="pdfInput" type="file" accept="application/pdf,.pdf,.json,application/json" hidden>
+    </div>
+    <div class="start-row">
+      <button class="btn text" id="sampleBtn" type="button">Coba dengan contoh lembar</button>
+      <span class="dot" aria-hidden="true"></span>
+      <button class="btn text" id="openJsonBtn" type="button">Buka berkas lembar (.json)</button>
+    </div>
+    <div class="recent" id="recent" hidden>
+      <h2>Terakhir dibuka</h2>
+      <ul id="recentList"></ul>
+    </div>
+  </section>
+
+  <!-- 2. importing -->
+  <section class="busy" id="busy" hidden>
+    <div class="busy-card">
+      <svg class="spinner" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="18"/></svg>
+      <h2 id="busyTitle">Membaca PDF…</h2>
+      <div class="bar"><div class="bar-fill" id="busyBar"></div></div>
+      <p id="busyNote">Menyiapkan…</p>
+    </div>
+  </section>
+
+  <!-- 3. editor -->
+  <section class="editor" id="editor" hidden>
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Alat sunting">
+      <button class="tool" id="addTool" type="button" aria-pressed="false" title="Gambar kotak isian baru (A)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M12 9v6M9 12h6"/></svg>
+        <span>Tambah isian</span>
+      </button>
+      <span class="tb-sep"></span>
+      <span class="tb-note" id="tbNote">Klik kotak isian untuk menyuntingnya. Klik dua kali teks untuk memperbaiki.</span>
+      <span class="appbar-spacer"></span>
+      <button class="tool" id="zoomOut" type="button" title="Perkecil">−</button>
+      <span class="zoom" id="zoomLabel">100%</span>
+      <button class="tool" id="zoomIn" type="button" title="Perbesar">+</button>
+    </div>
+    <div class="workspace">
+      <div class="canvas" id="canvas"></div>
+      <aside class="inspector" id="inspector" aria-label="Pengaturan"></aside>
+    </div>
+  </section>
+</main>
+
+<div class="snackbar" id="snack" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="studio.js"></script>
+</body>
+</html>
