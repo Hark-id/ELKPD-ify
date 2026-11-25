@@ -85,6 +85,30 @@ try {
   check('and its room page hides the fix/new-room menu', await B.eval(`fetch('/api/room/sheet').then(r=>r.headers.get('X-Sheet-Editable'))`) === '0');
   await api(`/api/projects/${prj.body.id}/delete`, { method: 'POST', body: '{}' });
 
+  // ---- a whole class behind one school IP is not an attacker (review on #16)
+  const tiny = await A.eval(`fetch('/api/room/sheet').then(r => r.json())`);
+  const ipHeaders = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.' + (1 + Math.floor(Math.random() * 250)) };
+  const made = [];
+  for (let k = 0; k < 12; k++) {
+    const r = await fetch(BASE + '/api/rooms/from-sheet?label=K' + k, { method: 'POST', headers: ipHeaders, body: JSON.stringify(tiny) });
+    made.push(r.status);
+    if (k === 0) {
+      const c = r.headers.get('set-cookie') || '';
+      check('the room cookie is HttpOnly and SameSite=Lax, like /api/login', /lkm_session=/.test(c) && /HttpOnly/i.test(c) && /SameSite=Lax/i.test(c), c.replace(/=[^;]+/, '=…'));
+    }
+  }
+  check('12 groups on one school IP can all make rooms', made.every((x) => x === 200), made.join(','));
+
+  // ---- deleting: the room's code dies, and nothing is left behind
+  await A.goto(BASE + '/');
+  await A.waitFor(`document.getElementById('status').classList.contains('on')`);
+  // confirm() is accepted by the answerDialogs handler set up at the top
+  await A.eval(`document.getElementById('moreBtn').click(); document.getElementById('deleteRoomBtn').click()`);
+  await A.waitFor(`location.pathname === '/' && !document.body.dataset.room && document.getElementById('code')`, 15000)
+    .then(() => check('"Hapus ruang ini" deletes the room and returns to the start', true), () => check('"Hapus ruang ini" deletes the room and returns to the start', false));
+  const dead = await fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  check("a deleted room's code no longer opens anything", dead.status === 401, dead.status);
+
   check('no page errors', A.errors.length + B.errors.length === 0, [...A.errors, ...B.errors].join(' | '));
 } catch (e) {
   console.log('FAIL  suite crashed: ' + (e && e.stack || e));

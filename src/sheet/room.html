@@ -77,6 +77,7 @@
       <button type="button" role="menuitem" id="renameBtn">Ganti nama saya</button>
       <button type="button" role="menuitem" id="fixSheetBtn" hidden>Perbaiki lembar</button>
       <button type="button" role="menuitem" id="newRoomBtn" hidden>Ruang untuk kelompok lain</button>
+      <button type="button" role="menuitem" id="deleteRoomBtn" hidden>Hapus ruang ini</button>
       <button type="button" role="menuitem" id="printMenuBtn">Cetak / simpan PDF</button>
       <button type="button" role="menuitem" id="resetBtn">Kosongkan semua jawaban</button>
       <button type="button" role="menuitem" id="leaveBtn">Keluar dari ruang</button>
@@ -333,7 +334,16 @@ if (sheet) {
     location.href = '/';
   };
   if (sheet._editable) {
-    $('fixSheetBtn').hidden = $('newRoomBtn').hidden = false;
+    $('fixSheetBtn').hidden = $('newRoomBtn').hidden = $('deleteRoomBtn').hidden = false;
+    $('deleteRoomBtn').onclick = async () => {
+      menu.hidden = true;
+      if (!confirm('Hapus ruang ini? Kode tidak bisa dipakai lagi dan semua jawaban kelompok ini hilang.')) return;
+      try {
+        const r = await (await fetch('/api/room/delete', { method: 'POST', credentials: 'same-origin' })).json();
+        if (!r.ok) throw new Error(r.error);
+        location.href = '/';
+      } catch (e) { note('Gagal menghapus ruang: ' + e.message, 6000); }
+    };
     $('fixSheetBtn').onclick = () => { location.href = '/studio/?ruang=edit'; };
     $('newRoomBtn').onclick = async () => {
       menu.hidden = true;

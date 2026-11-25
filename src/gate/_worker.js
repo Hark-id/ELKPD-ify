@@ -1,6 +1,6 @@
 import { LANDING_HTML } from "./landing.js";
 import { ADMIN_HTML } from "./admin.js";
-import { projectsApi, LEGACY_PROJECT } from "./projects.js";
+import { projectsApi, releaseRoom, LEGACY_PROJECT } from "./projects.js";
 
 /* ------------------------------------------------------------------
    Group worksheet — access gate + real-time collaboration
@@ -295,10 +295,9 @@ async function gateHandler(request, env) {
       if (url.pathname === "/api/admin/delete" && request.method === "POST") {
         const roomId = await roomIdOf();
         if (!roomId) return Response.json({ ok: false }, { status: 400 });
-        await roomStub(roomId).fetch("https://room/reset-http", { method: "POST" });  /* purge answers */
-        await (await registry()).fetch("https://registry/delete-room", {
-          method: "POST", body: JSON.stringify({ roomId })
-        });
+        /* purge answers, free the code, and drop the room from its project
+           (a student sheet with no rooms left goes too): projects.js */
+        await releaseRoom(env, roomId);
         return Response.json({ ok: true });
       }
       if (url.pathname === "/api/admin/report-clear" && request.method === "POST") {

@@ -164,7 +164,9 @@ export async function projectsApi(request, env, url, roomSession, hooks = {}) {
   };
   if (p === "/api/rooms/from-sheet" && request.method === "POST") {
     if (!hooks.issueRoomCookie) return err(501, "not available");
-    if (!(await throttle("student-sheet:" + ip, 8, 3600000))) return err(429, "Terlalu banyak ruang dibuat dari jaringan ini. Coba lagi nanti.");
+    // A whole class sits behind one school IP, so the per-IP cap is
+    // class-sized (review on #16); the global cap bounds abuse overall.
+    if (!(await throttle("student-sheet:" + ip, 60, 3600000)) || !(await throttle("student-sheet:all", 3000, 3600000))) return err(429, "Terlalu banyak ruang dibuat dari jaringan ini. Coba lagi nanti.");
     const label = String(url.searchParams.get("label") || "").trim().slice(0, 60) || "Kelompok";
     const got = await readSheet(MAX_STUDENT_SHEET);
     if (got.error) return err(400, got.error);
@@ -195,7 +197,7 @@ export async function projectsApi(request, env, url, roomSession, hooks = {}) {
     }
     if (!anon) return err(403, "Lembar ini dikelola guru.");
     if (p === "/api/room/sheet" && request.method === "PUT") {
-      if (!(await throttle("student-publish:" + ip, 30, 3600000))) return err(429, "Terlalu sering. Coba lagi nanti.");
+      if (!(await throttle("student-publish:" + ip, 120, 3600000))) return err(429, "Terlalu sering. Coba lagi nanti.");
       const got = await readSheet(MAX_STUDENT_SHEET);
       if (got.error) return err(400, got.error);
       const res = await (await stub.fetch("https://do/publish?by=siswa", { method: "POST", body: got.text })).json();
@@ -203,10 +205,16 @@ export async function projectsApi(request, env, url, roomSession, hooks = {}) {
       return ok({ version: res.version });
     }
     if (p === "/api/room/new-room" && request.method === "POST") {
-      if (!(await throttle("student-room:" + ip, 20, 3600000))) return err(429, "Terlalu banyak ruang. Coba lagi nanti.");
+      if (!(await throttle("student-room:" + ip, 100, 3600000)) || !(await throttle("student-room:all", 5000, 3600000))) return err(429, "Terlalu banyak ruang. Coba lagi nanti.");
       if ((await call(stub, "/info")).project.rooms.length >= MAX_ROOMS) return err(403, `Paling banyak ${MAX_ROOMS} ruang per lembar.`);
       const r = await makeRoom(info.projectId, String((await input()).label || "").trim().slice(0, 60) || "Kelompok");
       return r ? ok({ room: r }) : err(503, "Gagal membuat kode. Coba lagi.");
+    }
+    /* delete this room (its code, its answers); the last room of a
+       student sheet takes the sheet with it, so nothing is left behind */
+    if (p === "/api/room/delete" && request.method === "POST") {
+      await releaseRoom(env, roomSession.roomId);
+      return ok({}, { headers: { "Set-Cookie": "lkm_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" + (url.protocol === "https:" ? "; Secure" : "") } });
     }
     return err(404, "not found");
   }
@@ -373,6 +381,27 @@ export async function projectsApi(request, env, url, roomSession, hooks = {}) {
     return ok({});
   }
   return err(404, "not found");
+}
+
+/**
+ * Free a room completely: answers, code, its place in its project, and, for
+ * a student (anonymous) sheet whose last room this was, the sheet itself.
+ * Used by the student "Hapus ruang" and by the admin console's delete, so
+ * anonymous projects never outlive their rooms (review on #16).
+ */
+export async function releaseRoom(env, roomId) {
+  const registry = env.REGISTRY.get(env.REGISTRY.idFromName("global"));
+  const info = await call(registry, "/by-room", { roomId }).catch(() => ({}));
+  await env.ROOM.get(env.ROOM.idFromName(roomId)).fetch("https://room/reset-http", { method: "POST" });
+  await call(registry, "/delete-room", { roomId });
+  const pid = info && info.ok && info.projectId;
+  if (!pid || pid === LEGACY_PROJECT || !env.PROJECT) return;
+  const stub = env.PROJECT.get(env.PROJECT.idFromName(pid));
+  await call(stub, "/remove-room", { roomId });
+  if (pid.startsWith("anon-")) {
+    const left = (await call(stub, "/info")).project;
+    if (left && !left.rooms.length) await call(stub, "/delete");
+  }
 }
 
 /** For the worksheet route: which project does this room serve? */
