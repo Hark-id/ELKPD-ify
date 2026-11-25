@@ -75,6 +75,9 @@
     <button class="btn icon" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">&#8942;</button>
     <div class="menu" id="menu" role="menu" hidden>
       <button type="button" role="menuitem" id="renameBtn">Ganti nama saya</button>
+      <button type="button" role="menuitem" id="fixSheetBtn" hidden>Perbaiki lembar</button>
+      <button type="button" role="menuitem" id="newRoomBtn" hidden>Ruang untuk kelompok lain</button>
+      <button type="button" role="menuitem" id="deleteRoomBtn" hidden>Hapus ruang ini</button>
       <button type="button" role="menuitem" id="printMenuBtn">Cetak / simpan PDF</button>
       <button type="button" role="menuitem" id="resetBtn">Kosongkan semua jawaban</button>
       <button type="button" role="menuitem" id="leaveBtn">Keluar dari ruang</button>
@@ -91,6 +94,15 @@
     <input id="nameInput" maxlength="40" placeholder="Nama Anda" required spellcheck="false" aria-label="Nama Anda">
     <p class="err" id="nameErr" hidden>Nama wajib diisi: anggota lain akan melihat namamu.</p>
     <div class="row"><button class="btn p" type="submit">Mulai berkolaborasi</button></div>
+  </form>
+</div>
+
+<div class="scrim" id="askScrim" hidden>
+  <form class="dialog" id="askForm" autocomplete="off">
+    <p class="eyebrow">Ruang baru, lembar yang sama</p>
+    <h2>Untuk kelompok lain</h2>
+    <input id="askInput" maxlength="60" placeholder="Nama kelompok" aria-label="Nama kelompok">
+    <div class="row"><button class="btn t" type="button" id="askCancel" style="margin-right:8px">Batal</button><button class="btn p" type="submit">Buat ruang</button></div>
   </form>
 </div>
 
@@ -185,6 +197,9 @@ try {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   sheet = await res.json();
   sheet._version = Number(res.headers.get('X-Sheet-Version') || 0);
+  // A student-made room (#15): its members may fix the sheet and open rooms
+  // for other groups. A teacher's sheet is the teacher's.
+  sheet._editable = res.headers.get('X-Sheet-Editable') === '1';
 } catch (e) {
   $('sheet').innerHTML = '';
   const p = document.createElement('p');
@@ -318,6 +333,48 @@ if (sheet) {
     try { await fetch('/api/logout', { credentials: 'same-origin' }); } catch {}
     location.href = '/';
   };
+  if (sheet._editable) {
+    $('fixSheetBtn').hidden = $('newRoomBtn').hidden = $('deleteRoomBtn').hidden = false;
+    $('deleteRoomBtn').onclick = async () => {
+      menu.hidden = true;
+      if (!confirm('Hapus ruang ini? Kode tidak bisa dipakai lagi dan semua jawaban kelompok ini hilang.')) return;
+      try {
+        const r = await (await fetch('/api/room/delete', { method: 'POST', credentials: 'same-origin' })).json();
+        if (!r.ok) throw new Error(r.error);
+        location.href = '/';
+      } catch (e) { note('Gagal menghapus ruang: ' + e.message, 6000); }
+    };
+    $('fixSheetBtn').onclick = () => { location.href = '/studio/?ruang=edit'; };
+    $('newRoomBtn').onclick = async () => {
+      menu.hidden = true;
+      const label = await new Promise((resolve) => {
+        const scrim = $('askScrim');
+        const done = (v) => { scrim.hidden = true; resolve(v); };
+        $('askInput').value = '';
+        $('askForm').onsubmit = (e) => { e.preventDefault(); done($('askInput').value.trim()); };
+        $('askCancel').onclick = () => done(null);
+        scrim.hidden = false;
+        setTimeout(() => $('askInput').focus(), 30);
+      });
+      if (label === null) return;
+      try {
+        const r = await (await fetch('/api/room/new-room', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) })).json();
+        if (!r.ok) throw new Error(r.error);
+        const link = `${location.origin}/j/${r.room.code}`;
+        try { await navigator.clipboard.writeText(link); } catch {}
+        note(`Ruang "${r.room.label}" dibuat. Kode: ${r.room.code} (tautan disalin)`, 12000);
+      } catch (e) { note('Gagal membuat ruang: ' + e.message, 6000); }
+    };
+  }
+  // Just created from a PDF: show the code to share, once.
+  try {
+    const fresh = JSON.parse(sessionStorage.getItem('esh-new-room') || 'null');
+    sessionStorage.removeItem('esh-new-room');
+    if (fresh && fresh.code === CODE) {
+      note(`Ruang siap! Bagikan kode ${CODE} ke teman sekelompok.`, 0, { label: 'Salin tautan', run: () => $('codeChip').click() });
+    }
+  } catch {}
+
   $('codeChip').onclick = async () => {
     const link = `${location.origin}/j/${CODE}`;
     try { await navigator.clipboard.writeText(link); note('Tautan bergabung disalin: ' + link); }

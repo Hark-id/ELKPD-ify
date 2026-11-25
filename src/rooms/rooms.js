@@ -401,8 +401,14 @@ export class AccountStore {
 const CHUNK = 500000; // chars; sheets are mostly ASCII, so well under 2 MB
 const KEEP_VERSIONS = 5;
 
+/* Student (anonymous) sheets expire after this long without a publish or
+   a new room, so storage from account-less users stays bounded. A class
+   using one for a semester stays well inside it. */
+const ANON_TTL_MS = 365 * 864e5;
+
 export class Project {
-  constructor(state) {
+  constructor(state, env) {
+    this.env = env;
     this.ctx = state;
     this.sql = state.storage.sql;
     this.schema();
@@ -449,6 +455,25 @@ export class Project {
     });
   }
 
+  /* anonymous projects: (re)arm the expiry alarm on every sign of use */
+  async touchAnon() {
+    if (this.meta().anon === '1') await this.ctx.storage.setAlarm(Date.now() + ANON_TTL_MS);
+  }
+
+  async alarm() {
+    const m = this.meta();
+    if (m.anon !== '1') return;
+    if (Date.now() - Number(m.updated_at || m.created_at || 0) < ANON_TTL_MS - 864e5) { await this.touchAnon(); return; }
+    const rooms = this.sql.exec('SELECT room_id FROM rooms').toArray().map((r) => r.room_id);
+    const registry = this.env.REGISTRY.get(this.env.REGISTRY.idFromName('global'));
+    for (const id of rooms) {
+      await registry.fetch('https://registry/delete-room', { method: 'POST', body: JSON.stringify({ roomId: id }) });
+      await this.env.ROOM.get(this.env.ROOM.idFromName(id)).fetch('https://room/reset-http', { method: 'POST' });
+    }
+    await this.ctx.storage.deleteAll();
+    this.schema();
+  }
+
   info() {
     const m = this.meta();
     return {
@@ -476,6 +501,7 @@ export class Project {
       const by = url.searchParams.get('by') || '';
       const text = await request.text();
       const v = this.storeSheet(text, by);
+      await this.touchAnon();
       return json({ ok: true, version: v });
     }
 
@@ -490,7 +516,18 @@ export class Project {
       return json({ ok: true });
     }
     if (path === '/info') return json({ ok: true, project: this.info() });
-    if (path === '/version') return json({ ok: true, version: Number(this.meta().version || 0) });
+    /* a student room's project (#15): no owner, no members, never listed */
+    if (path === '/init-anon') {
+      if (this.meta().id) return json({ ok: false, error: 'exists' }, 409);
+      this.setMeta('id', b.id);
+      this.setMeta('title', String(b.title || 'Lembar kerja').slice(0, 120));
+      this.setMeta('owner', '');
+      this.setMeta('anon', '1');
+      this.setMeta('created_at', Date.now());
+      await this.touchAnon();
+      return json({ ok: true });
+    }
+    if (path === '/version') { const m = this.meta(); return json({ ok: true, version: Number(m.version || 0), anon: m.anon === '1' }); }
     if (path === '/role') {
       const r = this.sql.exec('SELECT role FROM members WHERE user_id = ?', String(b.userId || '')).toArray()[0];
       return json({ ok: true, role: r ? r.role : null, title: this.meta().title || '' });
@@ -508,6 +545,8 @@ export class Project {
     }
     if (path === '/add-room') {
       this.sql.exec('INSERT OR REPLACE INTO rooms (room_id, label, code, created_at) VALUES (?, ?, ?, ?)', String(b.roomId), String(b.label || '').slice(0, 60), String(b.code), Date.now());
+      this.setMeta('updated_at', Date.now());
+      await this.touchAnon();
       return json({ ok: true });
     }
     if (path === '/remove-room') {
@@ -519,6 +558,7 @@ export class Project {
        deleteAll() drops the tables; recreate them so this live instance
        answers "no such project" instead of throwing until it's evicted. */
     if (path === '/delete') {
+      await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       this.schema();
       return json({ ok: true });
