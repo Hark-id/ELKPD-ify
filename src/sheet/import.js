@@ -1431,4 +1431,4 @@ export async function importPdf(pdfjs, data, opts = {}) {
   }
 }
 
-export const _internal = { parseFontName, detectFields, mergeGlyphs, dotRow, shrinkFactor, shrink };
+export const _internal = { parseFontName, detectFields, promptFor, mergeGlyphs, dotRow, shrinkFactor, shrink };

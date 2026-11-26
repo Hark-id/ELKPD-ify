@@ -290,6 +290,27 @@ async function importBytes(bytes, name) {
         $('busyNote').textContent = `Halaman ${done} dari ${total}`;
       },
     });
+    // Scanned pages (#23): OCR on this device. ?ocr=digital (or
+    // localStorage 'elkpd-ocr' = 'digital') also turns the scan into real
+    // text, until the Studio gets a toggle for it.
+    const ocr = await import('../sheet/ocr.js');
+    if (ocr.needsOcr(s)) {
+      let digital = QS.get('ocr') === 'digital';
+      try { digital = digital || localStorage.getItem('elkpd-ocr') === 'digital'; } catch { /* storage blocked */ }
+      $('busyTitle').textContent = 'Membaca teks pindaian';
+      $('busyNote').textContent = 'Memuat pengenal teks…';
+      $('busyBar').style.width = '0%';
+      try {
+        await ocr.ocrSheet(lib, bytes, s, {
+          digital,
+          docOptions: { standardFontDataUrl: `${PDFJS}/standard_fonts/`, cMapUrl: `${PDFJS}/cmaps/`, cMapPacked: true },
+          onProgress({ page, pages, pct }) {
+            $('busyBar').style.width = Math.round(100 * pct) + '%';
+            $('busyNote').textContent = `Halaman ${page} dari ${pages} · ${Math.round(100 * pct)}%`;
+          },
+        });
+      } catch (e) { console.warn('OCR failed', e); }
+    }
     const n = s.pages.reduce((k, p) => k + p.fields.length, 0);
     const textless = s.pages.every((p) => !p.text.length);
     openSheet(s, null);
