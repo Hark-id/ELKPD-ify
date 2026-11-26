@@ -38,7 +38,9 @@ try {
   await A.waitFor(`!document.getElementById('nameScrim').hidden`);
   await A.eval(`document.getElementById('nameInput').value='Sari'; document.getElementById('nameForm').requestSubmit()`);
   await A.waitFor(`document.getElementById('status').classList.contains('on')`);
-  check('the share notice shows the code', await A.eval(`document.getElementById('note').textContent.includes(${JSON.stringify(code)})`));
+  await A.waitFor(`!document.getElementById('shareScrim').hidden`);
+  check('a fresh room opens the invite with its code', await A.eval(`document.getElementById('shareCode').textContent === ${JSON.stringify(code)} && document.getElementById('shareLink').textContent.endsWith('/j/' + ${JSON.stringify(code)})`));
+  await A.eval(`document.getElementById('shareClose').click()`);
   check('room menu offers fixing the sheet and rooms for other groups', await A.eval(`!document.getElementById('fixSheetBtn').hidden && !document.getElementById('newRoomBtn').hidden`));
 
   // ---- a classmate joins with the code and they sync
@@ -68,7 +70,7 @@ try {
   await A.eval(`document.getElementById('moreBtn').click(); document.getElementById('newRoomBtn').click()`);
   await A.waitFor(`!document.getElementById('askScrim').hidden`);
   await A.eval(`document.getElementById('askInput').value = 'Kelompok Melati'; document.getElementById('askForm').requestSubmit()`);
-  const other = await A.waitFor(`(/Kode: ([A-Z2-9]{6})/.exec(document.getElementById('note').textContent) || [])[1]`, 10000).catch(() => '');
+  const other = await A.waitFor(`!document.getElementById('shareScrim').hidden && document.getElementById('shareTitle').textContent.includes('Melati') && document.getElementById('shareCode').textContent`, 10000).catch(() => '');
   check('"Ruang untuk kelompok lain" makes a room with its own code', /^[A-Z2-9]{6}$/.test(other) && other !== code, other);
 
   // ---- a teacher's project can't be edited from a room session
