@@ -4,85 +4,134 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#fff8f7">
 <title>Lembar kerja</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600&display=swap">
 <style>
   /* App chrome around an imported sheet (src/sheet/player.js). Served by
      the gate for rooms of a project (docs/design/projects.md); the room
-     values below are HTML-escaped into attributes by the gate. */
+     values below are HTML-escaped into attributes by the gate. Motion uses
+     the gate's springs, like the Studio. */
   :root{--primary:#a80029;--on-primary:#fff;--primary-container:#ffdad9;--on-primary-container:#40000a;
-    --surface:#fff8f7;--surface-container:#fceae9;--surface-container-high:#f6e4e3;--on-surface:#231919;--on-surface-variant:#534342;
-    --outline-variant:#d8c2c0;--ok:#146c2e;--e-spatial:cubic-bezier(.42,1.67,.21,.90);--e-effects:cubic-bezier(.34,.80,.34,1)}
-  *{box-sizing:border-box}
+    --surface:#fff8f7;--surface-container-low:#fff0ef;--surface-container:#fceae9;--surface-container-high:#f6e4e3;--on-surface:#231919;--on-surface-variant:#534342;
+    --outline:#857372;--outline-variant:#d8c2c0;--error:#ba1a1a;--ok:#146c2e;--warn-container:#ffdea3;--on-warn-container:#261a00;
+    --spring-fast:cubic-bezier(.42,1.67,.21,.90);--spring:cubic-bezier(.39,1.29,.35,.98);--effects:cubic-bezier(.34,.80,.34,1);--ease-out:cubic-bezier(.23,1,.32,1)}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;min-height:100%}
   body{font-family:"Roboto Flex","Segoe UI",Roboto,Arial,sans-serif;background:#ece6e5;color:var(--on-surface);-webkit-font-smoothing:antialiased}
-  /* every tappable thing, inputs included: no OS tap flash (CONTRIBUTING) */
-  *{-webkit-tap-highlight-color:transparent}
-  button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  button{font:inherit;color:inherit;cursor:pointer;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   :focus-visible{outline:3px solid var(--primary);outline-offset:2px}
   ::selection{background:var(--primary-container);color:var(--on-primary-container)}
   [hidden]{display:none!important}
-  .bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:8px 12px;padding-top:max(8px,env(safe-area-inset-top));
-    background:var(--surface);border-bottom:1px solid var(--outline-variant)}
-  .bar h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--outline-variant);border-radius:8px;background:transparent;
-    font-size:13px;font-weight:500;white-space:nowrap;transition:border-radius .2s var(--e-effects),background .15s}
-  .chip:hover{background:var(--surface-container)}
-  .chip:active{border-radius:16px}
-  .chip code{font:600 13px/1 ui-monospace,Consolas,monospace;letter-spacing:.08em;color:var(--primary)}
-  .status{width:8px;height:8px;border-radius:50%;background:#b3261e;flex:none;transition:background .3s}
-  .status.on{background:var(--ok)}
+  svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  .bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;padding-top:max(8px,env(safe-area-inset-top));
+    padding-left:max(16px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right));background:var(--surface);border-bottom:1px solid var(--outline-variant)}
+  .head{flex:1;min-width:0}
+  .bar h1{margin:0;font-size:16px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{display:flex;align-items:center;gap:6px;font-size:12px;line-height:16px;color:var(--on-surface-variant);white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums}
+  .meta .sep{opacity:.5}
+  /* connection: say nothing while it works, say it plainly when it doesn't */
+  .status{display:none}
+  .status.off{display:inline-flex;align-items:center;gap:4px;color:#7a4f00;font-weight:500}
+  .status::before{content:"";width:6px;height:6px;border-radius:50%;background:#c58b00}
+  .progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;background:transparent;overflow:hidden;pointer-events:none}
+  .progress i{display:block;height:100%;background:var(--primary);transform-origin:left;transform:scaleX(0);transition:transform .5s var(--spring)}
   .peers{display:flex;align-items:center}
-  .peer{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:600;border:2px solid var(--surface);margin-left:-6px}
+  .peer{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:600;border:2px solid var(--surface);margin-left:-6px;
+    animation:peer-in .35s var(--spring-fast) both}
   .peer:first-child{margin-left:0}
-  .btn{height:36px;padding:0 16px;border:0;border-radius:999px;font-weight:500;font-size:14px;transition:border-radius .15s var(--e-effects),background .15s}
-  .btn:active{border-radius:8px}
+  @keyframes peer-in{from{transform:scale(.6);opacity:0}}
+  .chip{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px 0 12px;border:0;border-radius:999px;background:var(--primary-container);color:var(--on-primary-container);
+    white-space:nowrap;transition:border-radius .35s var(--spring-fast),transform .15s var(--ease-out)}
+  .chip:active{border-radius:12px;transform:scale(.97)}
+  .chip code{font:600 14px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em}
+  .icon{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:999px;background:transparent;color:var(--on-surface-variant);flex:none;
+    transition:background-color .15s var(--effects),transform .15s var(--ease-out)}
+  .icon:active{transform:scale(.94)}
+  @media (hover:hover) and (pointer:fine){.icon:hover{background:rgba(35,25,25,.08)}.chip:hover{background:color-mix(in srgb,var(--primary) 12%,var(--primary-container))}}
+  .btn{height:40px;padding:0 20px;border:0;border-radius:999px;font-weight:500;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    transition:border-radius .35s var(--spring-fast),transform .15s var(--ease-out)}
+  .btn:active{border-radius:8px;transform:scale(.97)}
   .btn.p{background:var(--primary);color:var(--on-primary)}
   .btn.t{background:var(--primary-container);color:var(--on-primary-container)}
-  .btn.icon{width:36px;padding:0;background:transparent;font-size:20px;line-height:1}
-  .btn.icon:hover{background:var(--surface-container)}
-  .menu{position:absolute;right:12px;top:calc(100% + 4px);min-width:220px;background:var(--surface-container);border-radius:16px;padding:8px 0;box-shadow:0 4px 12px rgba(0,0,0,.18)}
-  .menu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:12px 16px;font-size:14px}
-  .menu button:hover{background:rgba(35,25,25,.08)}
-  #sheet{padding:16px 8px 64px}
-  .note{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#362f2e;color:#fbeeec;padding:12px 16px;border-radius:4px;font-size:14px;z-index:30;
-    box-shadow:0 4px 12px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
+  .btn.x{background:transparent;color:var(--primary);padding:0 12px}
+
+  .menu{position:absolute;right:8px;top:calc(100% + 4px);min-width:240px;background:var(--surface-container);border-radius:16px;padding:8px;box-shadow:0 6px 20px rgba(0,0,0,.16),0 1px 3px rgba(0,0,0,.1);
+    transform-origin:top right;transition:opacity .15s var(--effects),transform .35s var(--spring-fast)}
+  @starting-style{.menu{opacity:0;transform:scale(.94) translateY(-6px)}}
+  .menu button{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:0;background:transparent;padding:12px;border-radius:12px;font-size:14px}
+  .menu button svg{color:var(--on-surface-variant)}
+  .menu button.danger,.menu button.danger svg{color:var(--error)}
+  .menu hr{border:0;border-top:1px solid var(--outline-variant);margin:6px 4px}
+  @media (hover:hover) and (pointer:fine){.menu button:hover{background:rgba(35,25,25,.08)}}
+  #sheet{padding:16px 8px calc(64px + env(safe-area-inset-bottom))}
+  .note{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#362f2e;color:#fbeeec;padding:12px 16px;border-radius:8px;font-size:14px;line-height:20px;z-index:30;
+    box-shadow:0 4px 12px rgba(0,0,0,.25);width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:16px;transition:transform .35s var(--spring-fast),opacity .15s var(--effects)}
+  @starting-style{.note{transform:translate(-50%,24px);opacity:0}}
   .msg{padding:48px 16px;text-align:center;color:var(--on-surface-variant)}
-  .note-act{border:0;background:transparent;color:#ffb3b3;font:600 14px/1 inherit;padding:0 0 0 12px;cursor:pointer}
-  /* naming dialog */
-  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.32);display:grid;place-items:center;z-index:40;padding:16px}
-  .dialog{width:min(400px,100%);background:var(--surface);border-radius:28px;padding:24px}
+  .note-act{border:0;background:transparent;color:#ffb3b3;font:600 14px/1 inherit;padding:8px;margin:-8px -8px -8px auto;cursor:pointer;flex:none}
+  /* dialogs */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.32);display:grid;place-items:center;z-index:40;padding:16px;transition:opacity .25s var(--effects)}
+  @starting-style{.scrim{opacity:0}}
+  .dialog{width:min(400px,100%);background:var(--surface);border-radius:28px;padding:24px;transition:transform .5s var(--spring),opacity .15s var(--effects)}
+  @starting-style{.dialog{transform:scale(.94) translateY(8px);opacity:0}}
   .dialog p.eyebrow{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--primary);letter-spacing:.4px;text-transform:uppercase}
   .dialog h2{margin:0 0 16px;font-size:24px;font-weight:500}
-  .dialog input{width:100%;height:56px;border:1px solid #857372;border-radius:4px;padding:0 16px;font:inherit;font-size:16px;background:#fff}
+  .dialog input{width:100%;height:56px;border:1px solid var(--outline);border-radius:8px;padding:0 16px;font:inherit;font-size:16px;background:#fff}
   .dialog input:focus{outline:none;border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
-  .dialog .row{display:flex;justify-content:flex-end;margin-top:20px}
-  .dialog .err{color:#b3261e;font-size:13px;margin:8px 4px 0}
+  .dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;flex-wrap:wrap}
+  .dialog .err{color:var(--error);font-size:13px;margin:8px 4px 0}
+  .big-code{display:block;width:100%;margin:4px 0 8px;padding:18px 0;border:0;border-radius:20px;background:var(--surface-container);text-align:center;
+    font:600 clamp(30px,10vw,40px)/1 ui-monospace,Consolas,monospace;letter-spacing:.18em;color:var(--primary);text-indent:.18em}
+  .link-text{margin:0;font-size:13px;color:var(--on-surface-variant);text-align:center;word-break:break-all}
   .veil{position:fixed;background:var(--primary);z-index:50;pointer-events:none}
-  @media (max-width:600px){.bar h1{font-size:14px}.chip .lbl{display:none}#printBtn{display:none}}
+  @media (max-width:600px){
+    .bar h1{font-size:15px}
+    .peer:nth-child(n+4){display:none}
+    .chip{padding:0 12px}
+    .chip svg{display:none}
+    .menu{position:fixed;top:auto;left:0;right:0;bottom:0;border-radius:28px 28px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom));transform-origin:bottom center;
+      box-shadow:0 0 0 100vmax rgba(0,0,0,.32)}
+    @starting-style{.menu{transform:translateY(40px);opacity:0}}
+    .menu button{padding:14px 12px;font-size:15px}
+  }
   @media print{.bar,.note{display:none!important}#sheet{padding:0}body{background:#fff}}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body data-room="__ROOM_ID__" data-label="__ROOM_LABEL__" data-code="__ROOM_CODE__">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 17H5v-7h14v7h-2M8 14h8v6H8z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-erase" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-exit" viewBox="0 0 24 24"><path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10"/></symbol>
+</svg>
 <header class="bar">
-  <span class="status" id="status" title="Menyambung…"></span>
-  <h1 id="title">Memuat…</h1>
+  <div class="head">
+    <h1 id="title">Memuat…</h1>
+    <div class="meta"><span id="roomLabel"></span><span class="sep" aria-hidden="true">·</span><span id="filled">&nbsp;</span><span class="status" id="status" role="status">Offline, tersimpan di perangkat</span></div>
+  </div>
   <div class="peers" id="peers" aria-label="Anggota yang online"></div>
-  <button class="chip" id="codeChip" type="button" title="Salin tautan bergabung"><span class="lbl" id="roomLabel"></span><code id="roomCode"></code></button>
-  <button class="btn p" id="printBtn" type="button">Cetak</button>
+  <button class="chip" id="codeChip" type="button" aria-label="Ajak teman"><svg class="i"><use href="#i-share"/></svg><code id="roomCode"></code></button>
   <div style="position:relative">
-    <button class="btn icon" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya">&#8942;</button>
+    <button class="icon" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Lainnya"><svg class="i"><use href="#i-more"/></svg></button>
     <div class="menu" id="menu" role="menu" hidden>
-      <button type="button" role="menuitem" id="renameBtn">Ganti nama saya</button>
-      <button type="button" role="menuitem" id="fixSheetBtn" hidden>Perbaiki lembar</button>
-      <button type="button" role="menuitem" id="newRoomBtn" hidden>Ruang untuk kelompok lain</button>
-      <button type="button" role="menuitem" id="deleteRoomBtn" hidden>Hapus ruang ini</button>
-      <button type="button" role="menuitem" id="printMenuBtn">Cetak / simpan PDF</button>
-      <button type="button" role="menuitem" id="resetBtn">Kosongkan semua jawaban</button>
-      <button type="button" role="menuitem" id="leaveBtn">Keluar dari ruang</button>
+      <button type="button" role="menuitem" id="renameBtn"><svg class="i"><use href="#i-user"/></svg>Ganti nama saya</button>
+      <button type="button" role="menuitem" id="printMenuBtn"><svg class="i"><use href="#i-print"/></svg>Cetak / simpan PDF</button>
+      <button type="button" role="menuitem" id="fixSheetBtn" hidden><svg class="i"><use href="#i-edit"/></svg>Perbaiki lembar</button>
+      <button type="button" role="menuitem" id="newRoomBtn" hidden><svg class="i"><use href="#i-plus"/></svg>Ruang untuk kelompok lain</button>
+      <hr>
+      <button type="button" role="menuitem" id="resetBtn" class="danger"><svg class="i"><use href="#i-erase"/></svg>Kosongkan semua jawaban</button>
+      <button type="button" role="menuitem" id="deleteRoomBtn" class="danger" hidden><svg class="i"><use href="#i-erase"/></svg>Hapus ruang ini</button>
+      <button type="button" role="menuitem" id="leaveBtn"><svg class="i"><use href="#i-exit"/></svg>Keluar dari ruang</button>
     </div>
   </div>
+  <div class="progress" aria-hidden="true"><i id="progressFill"></i></div>
 </header>
 <div id="sheet"><p class="msg">Memuat lembar…</p></div>
 <div class="note" id="note" role="status" aria-live="polite" hidden></div>
@@ -90,19 +139,29 @@
 <div class="scrim" id="nameScrim" hidden>
   <form class="dialog" id="nameForm" autocomplete="off">
     <p class="eyebrow" id="nameEyebrow"></p>
-    <h2>Siapa nama Anda?</h2>
-    <input id="nameInput" maxlength="40" placeholder="Nama Anda" required spellcheck="false" aria-label="Nama Anda">
-    <p class="err" id="nameErr" hidden>Nama wajib diisi: anggota lain akan melihat namamu.</p>
-    <div class="row"><button class="btn p" type="submit">Mulai berkolaborasi</button></div>
+    <h2>Siapa namamu?</h2>
+    <input id="nameInput" maxlength="40" placeholder="Nama" required spellcheck="false" aria-label="Namamu" autocomplete="given-name" enterkeyhint="go">
+    <p class="err" id="nameErr" hidden>Isi namamu dulu.</p>
+    <div class="row"><button class="btn p" type="submit">Masuk</button></div>
   </form>
+</div>
+
+<div class="scrim" id="shareScrim" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+    <p class="eyebrow" id="shareEyebrow"></p>
+    <h2 id="shareTitle">Ajak teman sekelompok</h2>
+    <button class="big-code" id="shareCode" type="button" aria-label="Salin kode"></button>
+    <p class="link-text" id="shareLink"></p>
+    <div class="row"><button class="btn x" type="button" id="shareClose">Tutup</button><button class="btn t" type="button" id="shareCopy">Salin tautan</button><button class="btn p" type="button" id="shareNative" hidden>Bagikan</button></div>
+  </div>
 </div>
 
 <div class="scrim" id="askScrim" hidden>
   <form class="dialog" id="askForm" autocomplete="off">
-    <p class="eyebrow">Ruang baru, lembar yang sama</p>
+    <p class="eyebrow">Lembar yang sama, ruang baru</p>
     <h2>Untuk kelompok lain</h2>
     <input id="askInput" maxlength="60" placeholder="Nama kelompok" aria-label="Nama kelompok">
-    <div class="row"><button class="btn t" type="button" id="askCancel" style="margin-right:8px">Batal</button><button class="btn p" type="submit">Buat ruang</button></div>
+    <div class="row"><button class="btn x" type="button" id="askCancel">Batal</button><button class="btn p" type="submit">Buat ruang</button></div>
   </form>
 </div>
 
@@ -122,7 +181,7 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
 
-$('roomLabel').textContent = LABEL + ' ·';
+$('roomLabel').textContent = LABEL;
 $('roomCode').textContent = CODE;
 $('nameEyebrow').textContent = LABEL;
 
@@ -142,6 +201,8 @@ try {
 let noteTimer = 0;
 function note(msg, ms = 3000, action) {
   const n = $('note');
+  n.hidden = true; // re-enter, so a new message rises again
+  void n.offsetWidth;
   n.textContent = msg;
   if (action) {
     const b = document.createElement('button');
@@ -230,7 +291,7 @@ if (sheet) {
 
   player = createPlayer($('sheet'), sheet, {
     values: cached,
-    onInput(id, v) { queueEdit(id, v); cache(); },
+    onInput(id, v) { queueEdit(id, v); cache(); filledSoon(); },
     onFocus(id) { send({ type: 'focus', field: id }); },
   });
 
@@ -243,7 +304,7 @@ if (sheet) {
       d.className = 'peer';
       d.style.background = colorFor(p.id);
       d.textContent = (p.name || '?').trim().slice(0, 1).toUpperCase();
-      d.title = p.name + (p.id === pid ? ' (Anda)' : '');
+      d.title = p.name + (p.id === pid ? ' (kamu)' : '');
       box.appendChild(d);
     }
     for (const p of peers) {
@@ -260,10 +321,25 @@ if (sheet) {
     renderPeers();
   }
 
+  // Offline is said only after a moment: a reconnect blip is not news.
+  let offTimer = 0;
   function setStatus(on) {
+    clearTimeout(offTimer);
     $('status').classList.toggle('on', on);
-    $('status').title = on ? 'Tersambung' : 'Terputus: jawaban disimpan di perangkat ini dan dikirim saat tersambung lagi';
+    if (on) $('status').classList.remove('off');
+    else offTimer = setTimeout(() => $('status').classList.add('off'), 2500);
   }
+
+  // How much of the sheet is filled: a line under the bar and a count.
+  const total = sheet.pages.reduce((k, p) => k + p.fields.length, 0);
+  function renderFilled() {
+    const v = player.values();
+    const n = Object.values(v).filter((x) => x !== '' && x != null && x !== false).length;
+    $('filled').textContent = total ? `${n}/${total} terisi` : '';
+    $('progressFill').style.transform = `scaleX(${total ? n / total : 0})`;
+  }
+  let filledRaf = 0;
+  const filledSoon = () => { cancelAnimationFrame(filledRaf); filledRaf = requestAnimationFrame(renderFilled); };
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -279,16 +355,19 @@ if (sheet) {
         for (const [k, v] of pending) send({ type: 'edit', field: k, value: v });
         pending.clear();
         cache();
+        filledSoon();
         setPeers(m.peers || []);
       } else if (m.type === 'edit') {
         player.setValue(m.field, m.value);
         cache();
+        filledSoon();
       } else if (m.type === 'peers') {
         setPeers(m.peers || []);
       } else if (m.type === 'reset') {
         player.clear();
         store.del(CACHE_KEY);
-        note('Jawaban dikosongkan oleh anggota kelompok.');
+        filledSoon();
+        note('Jawaban dikosongkan oleh anggota kelompok');
       }
     };
     ws.onclose = () => {
@@ -299,6 +378,7 @@ if (sheet) {
     ws.onerror = () => { try { ws.close(); } catch {} };
   }
 
+  renderFilled();
   await named;
   connect();
 
@@ -311,7 +391,7 @@ if (sheet) {
       const r = await (await fetch('/api/room/version', { credentials: 'same-origin', cache: 'no-store' })).json();
       if (r.ok && sheet._version && r.version > sheet._version) {
         told = true;
-        note('Guru memperbarui lembar ini.', 0, { label: 'Muat ulang', run: () => location.reload() });
+        note('Lembar diperbarui guru', 0, { label: 'Muat ulang', run: () => location.reload() });
       }
     } catch { /* offline: try again later */ }
   }, 60000);
@@ -320,7 +400,7 @@ if (sheet) {
   const menu = $('menu');
   $('moreBtn').onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; $('moreBtn').setAttribute('aria-expanded', String(!menu.hidden)); };
   addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) { menu.hidden = true; $('moreBtn').setAttribute('aria-expanded', 'false'); } });
-  $('printBtn').onclick = $('printMenuBtn').onclick = () => window.print();
+  $('printMenuBtn').onclick = () => { menu.hidden = true; window.print(); };
   $('renameBtn').onclick = async () => { menu.hidden = true; await askName(true); send({ type: 'name', name: myName }); };
   $('resetBtn').onclick = () => {
     menu.hidden = true;
@@ -328,6 +408,7 @@ if (sheet) {
     send({ type: 'reset' });
     player.clear();
     store.del(CACHE_KEY);
+    renderFilled();
   };
   $('leaveBtn').onclick = async () => {
     try { await fetch('/api/logout', { credentials: 'same-origin' }); } catch {}
@@ -360,9 +441,7 @@ if (sheet) {
       try {
         const r = await (await fetch('/api/room/new-room', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) })).json();
         if (!r.ok) throw new Error(r.error);
-        const link = `${location.origin}/j/${r.room.code}`;
-        try { await navigator.clipboard.writeText(link); } catch {}
-        note(`Ruang "${r.room.label}" dibuat. Kode: ${r.room.code} (tautan disalin)`, 12000);
+        showShare(r.room.label, r.room.code, true);
       } catch (e) { note('Gagal membuat ruang: ' + e.message, 6000); }
     };
   }
@@ -370,16 +449,35 @@ if (sheet) {
   try {
     const fresh = JSON.parse(sessionStorage.getItem('esh-new-room') || 'null');
     sessionStorage.removeItem('esh-new-room');
-    if (fresh && fresh.code === CODE) {
-      note(`Ruang siap! Bagikan kode ${CODE} ke teman sekelompok.`, 0, { label: 'Salin tautan', run: () => $('codeChip').click() });
-    }
+    if (fresh && fresh.code === CODE) named.then(() => showShare(LABEL, CODE, false, true));
   } catch {}
 
-  $('codeChip').onclick = async () => {
-    const link = `${location.origin}/j/${CODE}`;
-    try { await navigator.clipboard.writeText(link); note('Tautan bergabung disalin: ' + link); }
-    catch { note('Kode ruang: ' + CODE); }
-  };
+  $('codeChip').onclick = () => showShare(LABEL, CODE, false);
+}
+
+/* --- inviting: the code big enough to read across a table, the link to
+   send, and the phone's own share sheet where there is one */
+function showShare(label, code, other, fresh) {
+  const link = `${location.origin}/j/${code}`;
+  const scrim = $('shareScrim');
+  $('shareEyebrow').textContent = fresh ? 'Ruang siap' : label;
+  $('shareTitle').textContent = other ? `Kode untuk ${label}` : 'Ajak teman sekelompok';
+  $('shareCode').textContent = code;
+  $('shareLink').textContent = link.replace(/^https?:\/\//, '');
+  const copy = async (what, msg) => { try { await navigator.clipboard.writeText(what); note(msg); } catch { note(what, 6000); } };
+  $('shareCode').onclick = () => copy(code, 'Kode disalin');
+  $('shareCopy').onclick = () => copy(link, 'Tautan disalin');
+  const canShare = !!navigator.share;
+  $('shareNative').hidden = !canShare;
+  $('shareCopy').className = canShare ? 'btn t' : 'btn p';
+  $('shareNative').onclick = () => navigator.share({ title: label, text: `Gabung ke ${label}: kode ${code}`, url: link }).catch(() => {});
+  const close = () => { scrim.hidden = true; document.removeEventListener('keydown', esc); };
+  const esc = (e) => { if (e.key === 'Escape') close(); };
+  $('shareClose').onclick = close;
+  scrim.onclick = (e) => { if (e.target === scrim) close(); };
+  document.addEventListener('keydown', esc);
+  scrim.hidden = false;
+  setTimeout(() => (canShare ? $('shareNative') : $('shareCopy')).focus(), 30);
 }
 </script>
 </body>
