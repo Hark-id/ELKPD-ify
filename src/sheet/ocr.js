@@ -132,7 +132,7 @@ export function estimateSkew(data, W, H) {
 // neighbourhood and by tint against the page's paper, then filled in from
 // accepted neighbours. Dividing the page by that map makes paper white and
 // keeps everything printed on it, tinted panels included.
-function clean(data, W, H, scale) {
+function clean(data, W, H, scale, angle = 0) {
   const B = Math.max(16, Math.round(8 * scale));
   const gw = Math.ceil(W / B), gh = Math.ceil(H / B), G = gw * gh;
   const NB = 32;
@@ -232,7 +232,7 @@ function clean(data, W, H, scale) {
       out[i + 3] = 255;
     }
   }
-  const edges = dropEdges(out, W, H, scale);
+  const edges = dropEdges(out, W, H, scale, angle);
   return { out, B, gw, gh, nonPaper, edges };
 }
 
@@ -240,7 +240,7 @@ function clean(data, W, H, scale) {
 // the shadow of the lid, not the worksheet. Walk in from each side on a
 // coarse grid and paint them white, up to 8% of the page. Coloured bands
 // (a full-bleed header) are part of the design and stay.
-function dropEdges(out, W, H, scale) {
+function dropEdges(out, W, H, scale, angle) {
   const c = Math.max(3, Math.round(1.5 * scale));
   const cw = Math.ceil(W / c), ch = Math.ceil(H / c);
   const dark = new Uint8Array(cw * ch);
@@ -253,12 +253,21 @@ function dropEdges(out, W, H, scale) {
     dark[cy * cw + cx] = l / n < 115 && sat / n < 40 ? 1 : 0;
   }
   const kill = new Uint8Array(cw * ch);
+  const t = (angle * Math.PI) / 180, cs = Math.cos(t), sn = Math.sin(t);
+  const exposed = (cell) => {
+    const x = ((cell % cw) + 0.5) * c - W / 2, y = (((cell / cw) | 0) + 0.5) * c - H / 2;
+    const sx = x * cs - y * sn + W / 2, sy = x * sn + y * cs + H / 2;
+    return sx < c || sy < c || sx > W - c || sy > H - c;
+  };
   const walk = (len, max, at) => { // at(k) -> cell index of the k-th cell inward
     // Rotation can leave a sliver of paper outside the band: skip it.
+    // The deskew turned the scan, which exposes a wedge of fill along the
+    // edges: the band starts after it (and after at most one paper cell).
     let k = 0;
-    while (k < 3 && !dark[at(k)]) k++;
-    if (k >= 3) return;
-    while (k < max && (dark[at(k)] || (k + 1 < max && dark[at(k + 1)]))) k++;
+    while (k < max && !dark[at(k)] && (k < 1 || exposed(at(k)))) k++;
+    if (!dark[at(k)]) return;
+    const d = (j) => j < max && dark[at(j)];
+    while (k < max && (d(k) || d(k + 1) || d(k + 2))) k++;
     for (let j = 0; j <= Math.min(len - 1, k); j++) kill[at(j)] = 1;
   };
   const mxw = Math.ceil(cw * 0.08), mxh = Math.ceil(ch * 0.08);
@@ -287,10 +296,11 @@ function dropEdges(out, W, H, scale) {
 // run also needs clear paper just above and below it.
 function findRules(out, W, H, scale) {
   const bin = new Uint8Array(W * H);
-  for (let p = 0, i = 0; p < W * H; p++, i += 4) bin[p] = lumAt(out, i) < 128 ? 1 : 0;
-  const gap = Math.max(2, Math.round(0.6 * scale)), maxThick = 3 * scale;
+  for (let p = 0, i = 0; p < W * H; p++, i += 4) bin[p] = lumAt(out, i) < 200 ? 1 : 0; // thin grey rules print light
+  const gap = Math.max(2, Math.round(0.6 * scale));
   const regular = (xs) => { const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length) < 0.6 * m + 1; };
-  const scan = (horiz, minLen) => {
+  // (Verticals may be thicker: the accent bar down a callout's side.)
+  const scan = (horiz, minLen, piece, maxThick = 3 * scale) => {
     const N = horiz ? H : W, M = horiz ? W : H;
     const at = horiz ? (r, k) => bin[r * W + k] : (r, k) => bin[k * W + r];
     const segs = [], open = [];
@@ -299,7 +309,7 @@ function findRules(out, W, H, scale) {
       let s = -1, last = -1;
       for (let k = 0; k <= M; k++) {
         const v = k < M && at(r, k);
-        if (v) { if (s < 0) s = k; last = k; } else if (s >= 0 && k - last > gap) { if (last - s >= minLen) runs.push([s, last, false]); s = -1; }
+        if (v) { if (s < 0) s = k; last = k; } else if (s >= 0 && k - last > gap) { if (last - s >= piece) runs.push([s, last, false]); s = -1; }
       }
       if (horiz) {
         let blobs = [], bs = -1;
@@ -324,26 +334,54 @@ function findRules(out, W, H, scale) {
         flush();
       }
       for (const run of runs) {
-        const o = open.find((q) => q.last >= r - 2 && q.dotted === run[2] && Math.min(q.k1, run[1]) - Math.max(q.k0, run[0]) > 0.5 * Math.min(q.k1 - q.k0, run[1] - run[0]));
-        if (o) { o.k0 = Math.min(o.k0, run[0]); o.k1 = Math.max(o.k1, run[1]); o.last = r; } else open.push({ r0: r, last: r, k0: run[0], k1: run[1], dotted: run[2] });
+        // Same segment: overlapping, or (a rule a hair off level steps
+        // from row to row) continuing end to end.
+        const hit = open.filter((q) => q.last >= r - 2 && q.dotted === run[2] && run[0] < q.k1 + 2 * scale && run[1] > q.k0 - 2 * scale);
+        if (!hit.length) { open.push({ r0: r, last: r, k0: run[0], k1: run[1], dotted: run[2] }); continue; }
+        // A run that touches several open pieces joins them into one.
+        const o = hit[0];
+        for (const q of hit.slice(1)) { o.r0 = Math.min(o.r0, q.r0); o.k0 = Math.min(o.k0, q.k0); o.k1 = Math.max(o.k1, q.k1); open.splice(open.indexOf(q), 1); }
+        o.k0 = Math.min(o.k0, run[0]); o.k1 = Math.max(o.k1, run[1]); o.last = r;
       }
       for (let j = open.length - 1; j >= 0; j--) if (open[j].last < r - 2) segs.push(...open.splice(j, 1));
     }
     segs.push(...open);
-    return segs.filter((q) => q.last - q.r0 + 1 <= maxThick);
+    // Pieces of one faint rule, broken where the scan lost a few pixels.
+    const kept = segs.filter((q) => q.last - q.r0 + 1 <= maxThick).sort((a, b) => a.k0 - b.k0);
+    const joined = [];
+    for (const q of kept) {
+      const p = joined.find((j) => j.dotted === q.dotted && Math.abs((j.r0 + j.last) - (q.r0 + q.last)) < 3 * scale && q.k0 - j.k1 < 6 * scale);
+      if (p) { p.k1 = Math.max(p.k1, q.k1); p.r0 = Math.min(p.r0, q.r0); p.last = Math.max(p.last, q.last); } else joined.push({ ...q });
+    }
+    return joined.filter((q) => q.k1 - q.k0 >= minLen && q.last - q.r0 + 1 <= maxThick);
   };
-  const clear = (q) => {
+  const clear = (q, lim) => {
     const band = (y0, y1) => {
       let n = 0, a = 0;
       for (let y = Math.max(0, Math.round(y0)); y < Math.min(H, Math.round(y1)); y++) for (let x = q.k0; x <= q.k1; x += 2) { n += bin[y * W + x]; a++; }
       return a ? n / a : 0;
     };
-    return band(q.r0 - 4 * scale, q.r0 - 1.2 * scale) < 0.05 && band(q.last + 1.2 * scale, q.last + 4 * scale) < 0.05;
+    return band(q.r0 - 4 * scale, q.r0 - 1.2 * scale) < lim && band(q.last + 1.2 * scale, q.last + 4 * scale) < lim;
   };
   const toPt = (v) => r2(v / scale);
-  const h = scan(true, 20 * scale).filter((q) => !q.dotted || clear(q))
+  const h = scan(true, 20 * scale, 6 * scale).filter((q) => clear(q, q.dotted ? 0.05 : 0.12)) // (a run of serifs along a text baseline has letters right above it)
     .map((q) => ({ x0: toPt(q.k0), x1: toPt(q.k1 + 1), y: toPt((q.r0 + q.last + 1) / 2), t: toPt(q.last - q.r0 + 1), dotted: q.dotted }));
-  let v = scan(false, 8 * scale).map((q) => ({ y0: toPt(q.k0), y1: toPt(q.k1 + 1), x: toPt((q.r0 + q.last + 1) / 2), t: toPt(q.last - q.r0 + 1) }));
+  // Verticals need clear paper on both sides too (stacked letter stems).
+  const clearV = (q) => {
+    const band = (x0, x1) => {
+      let n = 0, a = 0;
+      for (let y = q.k0; y <= q.k1; y += 2) for (let x = Math.max(0, Math.round(x0)); x < Math.min(W, Math.round(x1)); x++) { n += bin[y * W + x]; a++; }
+      return a ? n / a : 0;
+    };
+    return band(q.r0 - 4 * scale, q.r0 - 1.2 * scale) < 0.12 && band(q.last + 1.2 * scale, q.last + 4 * scale) < 0.12;
+  };
+  let v = scan(false, 8 * scale, 6 * scale, 6 * scale).filter(clearV).map((q) => ({ y0: toPt(q.k0), y1: toPt(q.k1 + 1), x: toPt((q.r0 + q.last + 1) / 2), t: toPt(q.last - q.r0 + 1) }));
+  // Rules hugging the page edge are what is left of the scanner's border.
+  const EW = W / scale, EH = H / scale, M = 0.02;
+  const inside = (x, y) => x > EW * M && x < EW * (1 - M) && y > EH * M && y < EH * (1 - M);
+  const hh = h.filter((q) => inside(q.x0 + 1, q.y) && inside(q.x1 - 1, q.y));
+  h.length = 0; h.push(...hh);
+  v = v.filter((q) => inside(q.x, q.y0 + 1) && inside(q.x, q.y1 - 1));
   // Snap ends that nearly meet, so boxes and tables close exactly the way
   // detectFields expects from vector drawings.
   const S = 5;
@@ -366,17 +404,19 @@ function findRules(out, W, H, scale) {
 }
 
 // Closed rectangles from four rules, for detectFields' empty-box step
-// (tables of several cells are left to its table step).
+// (tables of several cells are left to its table step). Returns the
+// rectangles and the rules they used.
 function rectsFrom(h, v) {
   const out = [];
-  for (const top of h) {
-    if (top.dotted) continue;
-    for (const bot of h) {
-      if (bot === top || bot.dotted || bot.y - top.y < 12 || Math.abs(bot.x0 - top.x0) > 6 || Math.abs(bot.x1 - top.x1) > 6) continue;
-      const side = (x) => v.some((a) => Math.abs(a.x - x) < 6 && a.y0 <= top.y + 6 && a.y1 >= bot.y - 6);
-      if (!side(top.x0) || !side(top.x1)) continue;
+  const hs = h.filter((q) => !q.dotted).sort((a, b) => a.y - b.y);
+  for (const top of hs) {
+    for (const bot of hs) {
+      if (bot.y - top.y < 12 || Math.abs(bot.x0 - top.x0) > 6 || Math.abs(bot.x1 - top.x1) > 6) continue;
+      const side = (x) => v.find((a) => Math.abs(a.x - x) < 6 && a.y0 <= top.y + 10 && a.y1 >= bot.y - 10); // (rounded corners)
+      const l = side(top.x0), r = side(top.x1);
+      if (!l || !r) continue;
       if (v.some((a) => a.x > top.x0 + 6 && a.x < top.x1 - 6 && a.y0 <= top.y + 6 && a.y1 >= bot.y - 6)) break;
-      out.push([top.x0, top.y, top.x1, bot.y]);
+      out.push({ box: [top.x0, top.y, top.x1, bot.y], rules: [top, bot, l, r] });
       break;
     }
   }
@@ -467,7 +507,9 @@ function runsOf(lines, scale, keepFlag) {
     for (const w of l.words) {
       const gapPx = cur ? w.box[0] - cur.words[cur.words.length - 1].box[2] : 0;
       const flag = keepFlag ? keepFlag(w) : false;
-      if (!cur || gapPx > 1.6 * l.sizePx || cur.flag !== flag) {
+      // A lone ":" belongs to its label ("Nama      :"), however far.
+      const far = gapPx > 1.6 * l.sizePx && !(/^[:;]$/.test(w.text) && gapPx < 8 * l.sizePx);
+      if (!cur || far || cur.flag !== flag) {
         cur = { line: l, words: [], flag };
         runs.push(cur);
       }
@@ -592,7 +634,7 @@ async function ocrPage(page, sp, worker, o, report) {
     data = g2.getImageData(0, 0, W, H).data;
     c2.width = c2.height = 0;
   }
-  const cl = clean(data, W, H, scale);
+  const cl = clean(data, W, H, scale, angle);
   data = null;
   const out = cl.out;
   const img = new ImageData(out, W, H);
@@ -600,15 +642,37 @@ async function ocrPage(page, sp, worker, o, report) {
   g1.putImageData(img, 0, 0);
   report(0.2);
   await tick();
-  // 3. OCR on the clean page
+  // 3. OCR on the clean page, minus its rules: rows of dots and box
+  // outlines next to words make tesseract's layout analysis drop whole
+  // lines ("Tanggal : ......") or read the dots as letters.
+  const rules = findRules(out, W, H, scale);
+  const ocrIn = new ImageData(new Uint8ClampedArray(out), W, H);
+  const wipe = (x0, y0, x1, y1) => {
+    for (let y = Math.max(0, Math.floor(y0 * scale) - 2); y <= Math.min(H - 1, Math.ceil(y1 * scale) + 2); y++) {
+      ocrIn.data.fill(255, (y * W + Math.max(0, Math.floor(x0 * scale))) * 4, (y * W + Math.min(W, Math.ceil(x1 * scale))) * 4);
+    }
+  };
+  for (const h of rules.h) wipe(h.x0, h.y - h.t / 2, h.x1, h.y + h.t / 2);
+  for (const v of rules.v) wipe(v.x - v.t / 2, v.y0, v.x + v.t / 2, v.y1);
+  g1.putImageData(ocrIn, 0, 0);
   const blob = await new Promise((r) => c1.toBlob(r, 'image/png'));
+  g1.putImageData(img, 0, 0);
   o.onRecognize = (p) => report(0.2 + 0.65 * p);
   const { data: res } = await worker.recognize(blob, {}, { blocks: true });
   o.onRecognize = null;
   report(0.86);
-  const lines = wordsOf(res.blocks, scale);
-  // 4. rules and runs
-  const rules = findRules(out, W, H, scale);
+  let lines = wordsOf(res.blocks, scale);
+  // 4. runs and fields
+  // A row of dots or dashes read as letters ("ee", "coi") is the rule, not
+  // text: drop doubtful words lying along a broken rule.
+  for (const l of lines) {
+    l.words = l.words.filter((w) => {
+      if (w.conf >= 0.7 && /[\p{L}\p{N}]{2}/u.test(w.text)) return true;
+      const [x0, y0, x1, y1] = w.box.map((v) => v / scale);
+      return !rules.h.some((h) => h.dotted && h.y > y0 - 2 && h.y < y1 + 2 && Math.min(h.x1, x1) - Math.max(h.x0, x0) > 0.6 * (x1 - x0));
+    });
+  }
+  lines = lines.filter((l) => l.words.length);
   let inks = null;
   if (o.digital) {
     inks = new Map();
@@ -616,27 +680,35 @@ async function ocrPage(page, sp, worker, o, report) {
   }
   // Digital: a word is redrawn as text only if it reads well enough and sits
   // on flat paper; the rest stay in the picture (invisible text over them).
-  const erasable = (w) => w.conf >= 0.45 && /[\p{L}\p{N}]/u.test(w.text) && inks.get(w).flat;
-  const runs = runsOf(lines, scale, o.digital ? (w) => !erasable(w) : null);
-  const spans = runs.map((r) => ({ text: r.str, x: r.x, baseline: r.baseline, width: r.width, size: r.size, angle: 0, alpha: 1,
+  const erasable = (w) => w.conf >= 0.45 && inks.get(w).flat;
+  // Fields come from whole runs, the same in both modes; the digital text
+  // layer splits runs where erased and kept words meet.
+  const lineRuns = runsOf(lines, scale, null);
+  const runs = o.digital ? runsOf(lines, scale, (w) => !erasable(w)) : lineRuns;
+  const spans = lineRuns.map((r) => ({ text: r.str, x: r.x, baseline: r.baseline, width: r.width, size: r.size, angle: 0, alpha: 1,
     charX: r.charX, font: FONT, family: 'sans-serif', weight: 400, italic: false, color: '#000000' }));
   // Rules the OCR also "read" (a row of dots as "....."): the rule is the
   // better witness, so those words don't count as text over it.
   const onRule = (s) => !/[\p{L}\p{N}]/u.test(s.text) && rules.h.some((h) => Math.abs(h.y - (s.baseline - s.size * 0.1)) < s.size * 0.6 && Math.min(h.x1, s.x + s.width) - Math.max(h.x0, s.x) > 0.5 * s.width);
   const ruleSpans = spans.filter((s) => !onRule(s));
   const shapes = [];
-  for (const h of rules.h) shapes.push({ type: 'path', bbox: [h.x0, h.y - h.t / 2, h.x1, h.y + h.t / 2], stroke: '#000000', lw: h.t, dash: h.dotted ? [1, 2] : null, line: true, subCount: 1 });
-  for (const v of rules.v) shapes.push({ type: 'path', bbox: [v.x - v.t / 2, v.y0, v.x + v.t / 2, v.y1], stroke: '#000000', lw: v.t, line: true, subCount: 1 });
-  for (const b of rectsFrom(rules.h, rules.v)) shapes.push({ type: 'path', bbox: b, stroke: '#000000', closed: true, boxy: true });
+  // A box big enough to write in goes to detectFields as a box, without its
+  // sides: as loose rules its bottom edge would read as an answer line.
+  const consumed = new Set();
+  for (const { box, rules: rs } of rectsFrom(rules.h, rules.v)) {
+    shapes.push({ type: 'path', bbox: box, stroke: '#000000', closed: true, boxy: true });
+    if (box[2] - box[0] >= 60 && box[3] - box[1] >= 24) rs.forEach((q) => consumed.add(q));
+  }
+  for (const h of rules.h) if (!consumed.has(h)) shapes.push({ type: 'path', bbox: [h.x0, h.y - h.t / 2, h.x1, h.y + h.t / 2], stroke: '#000000', lw: h.t, dash: h.dotted ? [1, 2] : null, line: true, subCount: 1 });
+  for (const v of rules.v) if (!consumed.has(v)) shapes.push({ type: 'path', bbox: [v.x - v.t / 2, v.y0, v.x + v.t / 2, v.y1], stroke: '#000000', lw: v.t, line: true, subCount: 1 });
   // Pictures and dark panels (blocks the paper estimate refused, in
   // clusters of at least 3x3): no answer goes in or across them.
   for (const b of regions(cl.nonPaper, cl.gw, cl.gh)) {
     if (b[2] - b[0] < 3 || b[3] - b[1] < 3) continue;
     shapes.push({ type: 'image', bbox: b.map((v) => r2((v * cl.B) / scale)) });
   }
-  if (globalThis.__ocrDebug) globalThis.__ocrDebug.push({ page: sp.id, h: rules.h, v: rules.v });
   const det = imp.detectFields({ page: 0, spans: ruleSpans, shapes, widgets: [], width: W0, height: H0 });
-  const choices = findChoices(runs, scale);
+  const choices = findChoices(lineRuns, scale);
   const fields = [];
   for (const f of det) {
     const box = [f.x, f.y, f.x + f.w, f.y + f.h];
@@ -647,10 +719,10 @@ async function ocrPage(page, sp, worker, o, report) {
     if (f.size) o2.size = f.size;
     const prompt = imp.promptFor(box, spans);
     const n = NUM.exec(prompt || '');
-    if (prompt && prompt !== o2.label) o2.prompt = prompt;
     // "Nama : ....." keeps its own label; an answer under question 3 is
     // "Jawaban no. 3".
     if (n && (!o2.label || f.source !== 'leader' || NUM.test(o2.label))) o2.label = `Jawaban no. ${n[1]}`;
+    if (prompt && prompt !== o2.label) o2.prompt = prompt;
     fields.push(o2);
   }
   for (const c of choices) fields.push(c.field);
@@ -687,8 +759,9 @@ async function ocrPage(page, sp, worker, o, report) {
     const inksOf = r.words.map((w) => inks.get(w)).filter((k) => k.ink);
     if (inksOf.length) {
       const col = [0, 1, 2].map((ch) => { const v = inksOf.map((k) => k.ink[ch]).sort((a, b) => a - b); return v[v.length >> 1]; });
-      // Near-black stays the default black; anything else is real colour.
-      if (Math.max(...col) > 70 || Math.max(...col) - Math.min(...col) > 30) t.color = hex(col);
+      // Dark, near-neutral ink (black through a tinted scan) stays the
+      // default black; anything else is real colour.
+      if (Math.max(...col) > 110 || Math.max(...col) - Math.min(...col) > 45) t.color = hex(col);
     }
     return t;
   });

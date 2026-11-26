@@ -42,6 +42,16 @@ input.esh-f[type=checkbox]{padding:0;accent-color:var(--esh-accent);cursor:point
 .esh-peer-flag{position:absolute;transform:translateY(-100%);font:600 10px/1.4 'Arimo',Arial,sans-serif;color:#fff;
   background:var(--peer-color,#e8710a);padding:0 5px;border-radius:4px 4px 4px 0;white-space:nowrap;pointer-events:none;z-index:2}
 .esh-sheet.esh-bare .esh-f{background:transparent}
+/* Multiple choice: one ring per option letter, drawn over the printed
+   letter (how a paper answer is marked). The group itself is invisible. */
+.esh-f.esh-choice{background:transparent;padding:0;box-shadow:none}
+.esh-opt{position:absolute;box-sizing:border-box;margin:0;padding:0;-webkit-appearance:none;appearance:none;border:0;border-radius:50%;
+  background:var(--esh-tint);cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent;transition:box-shadow .15s,background-color .15s}
+.esh-opt:checked{background:transparent;box-shadow:inset 0 0 0 2px var(--esh-accent)}
+.esh-opt:focus-visible{box-shadow:0 0 0 1.5px var(--esh-accent),0 0 0 4px rgba(15,23,42,.07)}
+.esh-opt:checked:focus-visible{box-shadow:inset 0 0 0 2px var(--esh-accent),0 0 0 3px rgba(15,23,42,.12)}
+.esh-sheet.esh-bare .esh-opt:not(:checked){background:transparent}
+.esh-choice[data-peer]{box-shadow:0 0 0 2px var(--peer-color,#e8710a)}
 .esh-sheet[data-readonly] .esh-f{pointer-events:none}
 .esh-f.esh-editing{box-shadow:0 0 0 2px var(--esh-accent);background:rgba(71,85,105,.14)}
 .esh-ed{position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff8f7;border-radius:20px 20px 0 0;box-shadow:0 -4px 16px rgba(0,0,0,.18);
@@ -72,13 +82,17 @@ textarea.esh-ed-input{min-height:96px;max-height:40vh}
   .esh-sheet .esh-pw:last-child{break-after:auto}
   .esh-sheet .esh-page{position:relative;transform:none!important;box-shadow:none;zoom:1.3313}
   .esh-ed{display:none}
-  .esh-sheet .esh-f{background:transparent}
+  .esh-sheet .esh-f,.esh-sheet .esh-opt:not(:checked){background:transparent}
   .esh-sheet .esh-f:focus-visible{box-shadow:none}
   .esh-peer-flag{display:none}
 }
 `;
 
 const r2 = (v) => Math.round(v * 100) / 100;
+// Kinds answered in place on the page (a tick, a choice), never in the
+// phone editor's text box.
+const inPlace = (f) => f.kind === 'checkbox' || f.kind === 'choice';
+let groupSeq = 0;
 
 function injectStyle(doc) {
   if (doc.getElementById(STYLE_ID)) return;
@@ -209,6 +223,32 @@ export function createPlayer(container, sheet, opts = {}) {
     if (f.kind === 'checkbox') {
       el = doc.createElement('input');
       el.type = 'checkbox';
+    } else if (f.kind === 'choice') {
+      // One radio per option, placed on its letter; the value is the letter.
+      // Clicking the chosen option again clears it (radios can't otherwise).
+      el = doc.createElement('div');
+      el.setAttribute('role', 'radiogroup');
+      el.classList.add('esh-choice');
+      const name = 'esh-c' + (++groupSeq) + '-' + f.id;
+      for (const o of f.options || []) {
+        const r = doc.createElement('input');
+        r.type = 'radio';
+        r.name = name;
+        r.value = o.value;
+        r.className = 'esh-opt';
+        r.setAttribute('aria-label', o.value);
+        r.style.cssText = `left:${r2(o.x - f.x)}px;top:${r2(o.y - f.y)}px;width:${o.w}px;height:${o.h}px`;
+        if (opts.readOnly) r.disabled = true;
+        let was = false;
+        r.addEventListener('pointerdown', () => { was = r.checked; });
+        r.addEventListener('click', () => {
+          if (!was) return;
+          was = false;
+          r.checked = false;
+          el.dispatchEvent(new Event('change'));
+        });
+        el.appendChild(r);
+      }
     } else if (f.kind === 'textarea') {
       el = doc.createElement('textarea');
       el.rows = 1;
@@ -229,7 +269,7 @@ export function createPlayer(container, sheet, opts = {}) {
     if (f.lineGap) {
       st.lineHeight = f.lineGap + 'px';
       st.fontSize = Math.min(13, r2(f.lineGap * 0.62)) + 'px';
-    } else if (f.kind !== 'textarea' && f.kind !== 'checkbox') {
+    } else if (f.kind !== 'textarea' && !inPlace(f)) {
       st.fontSize = Math.max(8, Math.min(12, r2((f.size || f.h) * 0.72))) + 'px';
     }
     const v = opts.values && opts.values[f.id];
@@ -238,12 +278,12 @@ export function createPlayer(container, sheet, opts = {}) {
       if (opts.onInput) opts.onInput(f.id, getElValue(el));
       schedule();
     };
-    el.addEventListener(f.kind === 'checkbox' ? 'change' : 'input', fire);
-    el.addEventListener('focus', () => {
+    el.addEventListener(inPlace(f) ? 'change' : 'input', fire);
+    el.addEventListener(f.kind === 'choice' ? 'focusin' : 'focus', () => {
       if (useEditor(f)) { openEditor(f.id); return; }
       if (opts.onFocus) opts.onFocus(f.id);
     });
-    el.addEventListener('blur', () => { if (!editor.id && opts.onFocus) opts.onFocus(null); });
+    el.addEventListener(f.kind === 'choice' ? 'focusout' : 'blur', () => { if (!editor.id && opts.onFocus) opts.onFocus(null); });
     return el;
   }
 
@@ -253,7 +293,7 @@ export function createPlayer(container, sheet, opts = {}) {
   // full-size input (16px: no iOS zoom-on-focus) that writes through to the
   // field, with previous/next to walk the sheet in reading order.
   function useEditor(f) {
-    if (opts.readOnly || opts.focusEditor === false || f.kind === 'checkbox') return false;
+    if (opts.readOnly || opts.focusEditor === false || inPlace(f)) return false;
     const p = pageOf.get(f.id);
     return !!p && p.scale < 0.8;
   }
@@ -307,8 +347,8 @@ export function createPlayer(container, sheet, opts = {}) {
     const i = order.indexOf(f);
     editor.el.querySelector('.esh-ed-pos').textContent = `${i + 1}/${order.length}`;
     const navs = editor.el.querySelectorAll('.esh-ed-nav');
-    navs[0].disabled = !order.slice(0, i).some((q) => q.kind !== 'checkbox');
-    navs[1].disabled = !order.slice(i + 1).some((q) => q.kind !== 'checkbox');
+    navs[0].disabled = !order.slice(0, i).some((q) => !inPlace(q));
+    navs[1].disabled = !order.slice(i + 1).some((q) => !inPlace(q));
     editor.el.classList.add('open');
     input.focus({ preventScroll: true });
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -316,7 +356,7 @@ export function createPlayer(container, sheet, opts = {}) {
   }
   function step(d) {
     let i = order.findIndex((q) => q.id === editor.id);
-    do i += d; while (order[i] && order[i].kind === 'checkbox');
+    do i += d; while (order[i] && inPlace(order[i]));
     if (order[i]) openEditor(order[i].id);
   }
   function closeEditor() {
@@ -329,10 +369,12 @@ export function createPlayer(container, sheet, opts = {}) {
   }
 
   function getElValue(el) {
+    if (el.dataset.kind === 'choice') { const c = el.querySelector('input:checked'); return c ? c.value : ''; }
     return el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
   }
   function setElValue(el, v) {
-    if (el.type === 'checkbox') el.checked = v === '1' || v === true;
+    if (el.dataset.kind === 'choice') { for (const r of el.querySelectorAll('input')) r.checked = v != null && r.value === String(v); }
+    else if (el.type === 'checkbox') el.checked = v === '1' || v === true;
     else el.value = v == null ? '' : String(v);
   }
 
