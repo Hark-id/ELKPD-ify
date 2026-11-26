@@ -256,6 +256,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   }
   .warn{margin:14px 2px 0;font-size:12px;line-height:1.55;color:var(--error)}
   /* third pane (#19): a link styled as the primary button */
+  .support{margin:8px 2px 0;font-size:12px;line-height:1.5;color:var(--on-surface-variant)}  /* bodySmall */
   .pane-lead{margin:2px 2px 0;font-size:15px;line-height:1.5;color:var(--on-surface)}
   .btn-link{display:block;box-sizing:border-box;text-align:center;text-decoration:none}
   @media (prefers-reduced-motion:reduce){
@@ -320,9 +321,10 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <form class="pane" id="pane-join" role="tabpanel" aria-labelledby="tab-join">
     <div class="tfield">
       <input id="code" name="code" type="text" placeholder=" " autocomplete="off"
-             autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
+             aria-describedby="code-hint" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
       <label for="code">Kode Grup</label>
     </div>
+    <p class="support" id="code-hint">Contoh: A7KQ9Z</p>
     <button class="btn" id="btn-join" type="submit">Buka Lembar Kerja</button>
     <p class="err" id="err-join"></p>
   </form>
@@ -330,9 +332,10 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <!-- create -->
   <form class="pane" id="pane-new" role="tabpanel" aria-labelledby="tab-new" hidden>
     <div class="tfield">
-      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60" enterkeyhint="done">
+      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60" enterkeyhint="done" aria-describedby="label-hint">
       <label for="label">Nama Kelompok (opsional)</label>
     </div>
+    <p class="support" id="label-hint">Bagikan kode hanya ke anggota grupmu.</p>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
     <p class="err" id="err-new"></p>
 
@@ -349,7 +352,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <!-- student rooms (#15): a room from the teacher's own PDF. Only
        navigates, so it's a div, not a form. -->
   <div class="pane" id="pane-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden>
-    <p class="pane-lead">PDF dari guru jadi lembar kerja grup.</p>
+    <p class="pane-lead">PDF dari gurumu, bukan lembar bawaan.</p>
     <a class="btn btn-link" id="btn-sheet" href="/studio/?untuk=kelompok">Pilih PDF</a>
   </div>
 
