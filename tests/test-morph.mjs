@@ -235,7 +235,8 @@ async function main() {
     const rl = await state();
     check('E reload: third tab restored', rl.filter(x => !x.hidden).map(x => x.k).join() === 'sheet' && rl.find(x => x.k === 'sheet').sel === 'true', JSON.stringify(rl));
     /* morph to the third pane animates */
-    await s.evalJS(`document.getElementById('tab-join').click()`); await sleep(900);
+    await sleep(1200);  /* the reload's 650ms entrance must be done before measuring */
+    await s.evalJS(`document.getElementById('tab-join').click()`); await sleep(1200);
     const m = summarize(await s.evalJS(`(${SAMPLE_AND_CLICK.replace('(clickExpr) => new Promise', 'clickExpr => new Promise')})("document.getElementById('tab-sheet').click()")`));
     const nat = await s.evalJS(`(function(){const c=document.querySelector('.card');const p=c.style.height;c.style.height='';const h=Math.round(c.getBoundingClientRect().height);c.style.height=p;return h;})()`);
     check('E morph to sheet: settles at natural height', Math.round(m.to) === nat, `to=${m.to} nat=${nat} distinct=${m.distinct}`);
