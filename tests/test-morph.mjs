@@ -7,12 +7,14 @@ import { findChrome } from './helpers.mjs';
 
 const CHROME = findChrome();
 
-let PORT = 9223;
-const HTML = 'file:///C:/Users/haufa/.zcode/workspace/draft-26cce703-4e51-4a8c-a6a1-75d67f686644/gate-test.html';
+let PORT = Number(process.env.CDP_PORT || 9223);  /* 9229 is node --inspect's default: set CDP_PORT if a local wrangler holds it */
+/* GATE_URL: any served gate, e.g. a local `wrangler pages dev` (http://127.0.0.1:8802/).
+   The fallback is the original offline harness file. */
+const HTML = process.env.GATE_URL || 'file:///C:/Users/haufa/.zcode/workspace/draft-26cce703-4e51-4a8c-a6a1-75d67f686644/gate-test.html';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function openSession({ reducedMotion = false, mobile = false } = {}) {
+async function openSession({ reducedMotion = false, mobile = false, width = 390 } = {}) {
   PORT += 1;
   const dir = mkdtempSync(join(tmpdir(), 'cdp-morph-'));
   const args = [
@@ -54,7 +56,7 @@ async function openSession({ reducedMotion = false, mobile = false } = {}) {
   await send('Page.enable');
   if (mobile) {
     await send('Emulation.setDeviceMetricsOverride', {
-      width: 390, height: 844, deviceScaleFactor: 2.625, mobile: true,
+      width, height: 844, deviceScaleFactor: 2.625, mobile: true,
     });
   }
   await send('Page.navigate', { url: HTML });
@@ -189,6 +191,71 @@ async function main() {
     const jumped = r.samples.slice(1, 8).every(h => h === r.samples[0]) && Math.round(a.to) !== H;
     check('D reduced: change applied instantly, no animated frames', jumped || Math.round(a.to) === H, `distinct=${a.distinct} from=${r.from} to=${Math.round(a.to)}`);
     check('D reduced: no height pinned', (await s.evalJS(`document.querySelector('.card').style.height`)) === '');
+    s.close();
+  }
+
+  /* ---------- E: three tabs (#19) ---------- */
+  {
+    const s = await openSession();
+    const PANES = ['join', 'new', 'sheet'];
+    const state = () => s.evalJS(`JSON.stringify(['join','new','sheet'].map(k => {
+      const t = document.getElementById('tab-' + k), p = document.getElementById('pane-' + k);
+      return { k, sel: t.getAttribute('aria-selected'), ctl: t.getAttribute('aria-controls'), role: p.getAttribute('role'), hidden: p.hidden };
+    }))`).then(JSON.parse);
+    const st0 = await state();
+    check('E wiring: tabs control their panes, panes are tabpanels',
+      st0.every(x => x.ctl === 'pane-' + x.k && x.role === 'tabpanel'), JSON.stringify(st0));
+    for (const k of ['sheet', 'new', 'join', 'sheet', 'join', 'new']) {
+      await s.evalJS(`document.getElementById('tab-${k}').click()`);
+      await sleep(700);
+      const st = await state();
+      const shown = st.filter(x => !x.hidden).map(x => x.k);
+      const sel = st.filter(x => x.sel === 'true').map(x => x.k);
+      check(`E click ${k}: exactly that pane visible and selected`, shown.join() === k && sel.join() === k, JSON.stringify({ shown, sel }));
+      const ind = JSON.parse(await s.evalJS(`(function(){const i=document.querySelector('.indicator').getBoundingClientRect(),t=document.getElementById('tab-${k}').getBoundingClientRect();return JSON.stringify({dl:Math.abs(i.left-t.left),dw:Math.abs(i.width-t.width)})})()`));
+      check(`E click ${k}: indicator sits under the tab`, ind.dl < 1.5 && ind.dw < 1.5, JSON.stringify(ind));
+    }
+    /* rapid 1 -> 2 -> 3: the last click wins, one pane only */
+    await s.evalJS(`document.getElementById('tab-join').click()`); await sleep(700);
+    await s.evalJS(`document.getElementById('tab-new').click()`); await sleep(40);
+    await s.evalJS(`document.getElementById('tab-sheet').click()`); await sleep(1200);
+    const r = await state();
+    check('E rapid join->new->sheet: only pane-sheet visible', r.filter(x => !x.hidden).map(x => x.k).join() === 'sheet', JSON.stringify(r));
+    const settle = JSON.parse(await s.evalJS(`(function(){const c=document.querySelector('.card');const running=c.getAnimations().filter(a=>a.playState==='running').length;c.style.height='';return JSON.stringify({running});})()`));
+    check('E rapid: no running card animations', settle.running === 0, JSON.stringify(settle));
+    const links = JSON.parse(await s.evalJS(`JSON.stringify({
+      cta: document.querySelector('#pane-sheet a.btn') && document.querySelector('#pane-sheet a.btn').getAttribute('href'),
+      oldLink: !!document.querySelector('#pane-new .pdf-link, #pane-new a[href*="studio"]'),
+      sheetIsDiv: document.getElementById('pane-sheet').tagName })`));
+    check('E CTA reaches /studio/?untuk=kelompok', links.cta === '/studio/?untuk=kelompok', JSON.stringify(links));
+    check('E pane-new no longer has the PDF link', !links.oldLink);
+    check('E pane-sheet is a div, not a form', links.sheetIsDiv === 'DIV');
+    /* remembered across reloads */
+    await s.evalJS(`location.reload(), 1`); await sleep(2200);
+    const rl = await state();
+    check('E reload: third tab restored', rl.filter(x => !x.hidden).map(x => x.k).join() === 'sheet' && rl.find(x => x.k === 'sheet').sel === 'true', JSON.stringify(rl));
+    /* morph to the third pane animates */
+    await s.evalJS(`document.getElementById('tab-join').click()`); await sleep(900);
+    const m = summarize(await s.evalJS(`(${SAMPLE_AND_CLICK.replace('(clickExpr) => new Promise', 'clickExpr => new Promise')})("document.getElementById('tab-sheet').click()")`));
+    const nat = await s.evalJS(`(function(){const c=document.querySelector('.card');const p=c.style.height;c.style.height='';const h=Math.round(c.getBoundingClientRect().height);c.style.height=p;return h;})()`);
+    check('E morph to sheet: settles at natural height', Math.round(m.to) === nat, `to=${m.to} nat=${nat} distinct=${m.distinct}`);
+    s.close();
+  }
+
+  /* ---------- F: 320px phone: nothing clipped, no horizontal scroll ---------- */
+  for (const width of [320, 390]) {
+    await sleep(1500);  /* let the previous Chrome exit */
+    const s = await openSession({ mobile: true, width });
+    for (const k of ['join', 'new', 'sheet']) {
+      await s.evalJS(`document.getElementById('tab-${k}').click()`); await sleep(700);
+      const o = JSON.parse(await s.evalJS(`(function(){
+        const de=document.documentElement;
+        const clipped=[...document.querySelectorAll('.tab, #pane-${k} *')].filter(e=>e.offsetParent&&(e.scrollWidth>e.clientWidth+1)&&getComputedStyle(e).overflowX!=='visible').map(e=>e.id||e.className);
+        const tabs=[...document.querySelectorAll('.tab')].map(t=>Math.round(t.getBoundingClientRect().height));
+        return JSON.stringify({hScroll:de.scrollWidth>de.clientWidth,clipped,tabs});
+      })()`));
+      check(`F ${width}px ${k}: no horizontal scroll or clipped text`, !o.hScroll && !o.clipped.length, JSON.stringify(o));
+    }
     s.close();
   }
 

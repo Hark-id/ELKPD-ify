@@ -255,8 +255,10 @@ export const LANDING_HTML = `<!DOCTYPE html>
     text-indent:.34em;
   }
   .warn{margin:14px 2px 0;font-size:12px;line-height:1.55;color:var(--error)}
-  .pdf-link{display:block;margin:14px 2px 0;text-align:center;font-size:13px;font-weight:600;color:var(--primary);text-decoration:underline;text-underline-offset:3px;-webkit-tap-highlight-color:transparent;border-radius:8px}
-  .pdf-link:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+  /* third pane (#19): a link styled as the primary button */
+  .pane-title{margin:2px 2px 8px;font-size:17px;font-weight:700;line-height:1.3;color:var(--on-surface)}
+  .pane-lead{margin:0 2px 10px;font-size:14px;line-height:1.55;color:var(--on-surface)}
+  .btn-link{display:block;box-sizing:border-box;text-align:center;text-decoration:none}
   .foot{
     margin:20px 0 0;
     font-size:11px;line-height:1.6;color:var(--on-surface-variant);
@@ -316,7 +318,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <div class="tabs" role="tablist">
     <span class="indicator" aria-hidden="true"></span>
     <button class="tab" role="tab" id="tab-join" aria-selected="true" aria-controls="pane-join">Masuk</button>
-    <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Buat Grup Baru</button>
+    <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Grup Baru</button>
+    <button class="tab" role="tab" id="tab-sheet" aria-selected="false" aria-controls="pane-sheet">e-LKPD Baru</button>
   </div>
 
   <!-- join -->
@@ -339,8 +342,6 @@ export const LANDING_HTML = `<!DOCTYPE html>
     </div>
     <p class="support">Kode dibuat otomatis. Bagikan hanya kepada anggota kelompok Anda.</p>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
-    <!-- student rooms (#15): bring the teacher's PDF instead of this sheet -->
-    <a class="pdf-link" href="/studio/?untuk=kelompok">Punya PDF dari guru? Buat ruang dari PDF</a>
     <p class="err" id="err-new"></p>
 
     <div id="created" hidden>
@@ -352,6 +353,15 @@ export const LANDING_HTML = `<!DOCTYPE html>
       <button class="btn" id="btn-enter" type="button">Buka Lembar Kerja</button>
     </div>
   </form>
+
+  <!-- student rooms (#15): a room from the teacher's own PDF. Only
+       navigates, so it's a div, not a form. -->
+  <div class="pane" id="pane-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden>
+    <h2 class="pane-title">Buat e-LKPD dari PDF</h2>
+    <p class="pane-lead">Punya PDF dari guru? Unggah PDF-nya, periksa kotak jawaban yang terdeteksi, lalu bagikan kode ruang ke kelompokmu. Tidak perlu akun.</p>
+    <p class="support">Beda dengan <b>Grup Baru</b>: itu membuat ruang untuk LKPD Teks Cerpen ini, sedangkan di sini lembarnya dari PDF milikmu sendiri.</p>
+    <a class="btn btn-link" id="btn-sheet" href="/studio/?untuk=kelompok">Buat dari PDF</a>
+  </div>
 
   <p class="foot">Setiap grup memiliki lembar kerja sendiri. Kode grup Anda hanya membuka lembar kerja kelompok Anda, dan jawaban tidak pernah tercampur antar grup.</p>
 
@@ -386,8 +396,12 @@ export const LANDING_HTML = `<!DOCTYPE html>
 
   var tabJoin = document.getElementById('tab-join');
   var tabNew = document.getElementById('tab-new');
+  var tabSheet = document.getElementById('tab-sheet');
   var paneJoin = document.getElementById('pane-join');
   var paneNew = document.getElementById('pane-new');
+  var paneSheet = document.getElementById('pane-sheet');
+  /* tab key -> [tab, pane]; the key is what sessionStorage remembers */
+  var TABS = { join: [tabJoin, paneJoin], 'new': [tabNew, paneNew], sheet: [tabSheet, paneSheet] };
   var codeInput = document.getElementById('code');
   var labelInput = document.getElementById('label');
 
@@ -427,7 +441,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   var gateCard = document.querySelector('.card');
   var gateLoader = document.getElementById('gateLoader');
 
-  var currentJoin = true;
+  var currentTab = 'join';
   var indTask = null;
   var sizeAnim = null;
 
@@ -751,27 +765,28 @@ export const LANDING_HTML = `<!DOCTYPE html>
      always wins and no onfinish race can leave panes invisible. The
      incoming pane then rises in on an effects curve (purely decorative). */
   function select(which) {
-    var join = which === 'join';
     /* cheapest possible guard: one variable read — clicking the tab
        that is already active does nothing at all */
-    if (join === currentJoin) return;
-    currentJoin = join;
-    tabJoin.setAttribute('aria-selected', join ? 'true' : 'false');
-    tabNew.setAttribute('aria-selected', join ? 'false' : 'true');
+    if (which === currentTab || !Object.prototype.hasOwnProperty.call(TABS, which)) return;
+    var from = currentTab;
+    currentTab = which;
+    Object.keys(TABS).forEach(function (k) {
+      TABS[k][0].setAttribute('aria-selected', k === which ? 'true' : 'false');
+    });
 
-    slideIndicator(join ? tabNew : tabJoin, join ? tabJoin : tabNew);
+    slideIndicator(TABS[from][0], TABS[which][0]);
 
-    var outEl = join ? paneNew : paneJoin;
-    var inEl = join ? paneJoin : paneNew;
+    var inEl = TABS[which][1];
     morphCard(function () {
       /* remember the tab across reloads */
-      try { sessionStorage.setItem('lkpd-gate-tab', join ? 'join' : 'new'); } catch (e) {}
-      /* clear stale fill:forwards animations from superseded swaps */
-      [outEl, inEl].forEach(function (p) {
+      try { sessionStorage.setItem('lkpd-gate-tab', which); } catch (e) {}
+      /* clear stale fill:forwards animations from superseded swaps, and
+         hide every other pane: a rapid 1->2->3 must leave exactly one */
+      Object.keys(TABS).forEach(function (k) {
+        var p = TABS[k][1];
         if (p.getAnimations) p.getAnimations().forEach(function (a) { a.cancel(); });
+        p.hidden = p !== inEl;
       });
-      outEl.hidden = true;
-      inEl.hidden = false;
       if (!RM && inEl.animate) {
         inEl.animate(
           [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' }],
@@ -780,17 +795,19 @@ export const LANDING_HTML = `<!DOCTYPE html>
       }
     });
   }
-  tabJoin.addEventListener('click', function () { select('join'); });
-  tabNew.addEventListener('click', function () { select('new'); });
+  Object.keys(TABS).forEach(function (k) {
+    TABS[k][0].addEventListener('click', function () { select(k); });
+  });
 
   /* ---- restore the last-active tab across reloads ---- */
   try {
-    currentJoin = sessionStorage.getItem('lkpd-gate-tab') !== 'new';
+    var saved = sessionStorage.getItem('lkpd-gate-tab');
+    if (Object.prototype.hasOwnProperty.call(TABS, saved)) currentTab = saved;
   } catch (e) { /* storage unavailable */ }
-  paneJoin.hidden = !currentJoin;
-  paneNew.hidden = currentJoin;
-  tabJoin.setAttribute('aria-selected', currentJoin ? 'true' : 'false');
-  tabNew.setAttribute('aria-selected', currentJoin ? 'false' : 'true');
+  Object.keys(TABS).forEach(function (k) {
+    TABS[k][1].hidden = k !== currentTab;
+    TABS[k][0].setAttribute('aria-selected', k === currentTab ? 'true' : 'false');
+  });
 
   /* ---- entrance: settle bounce (expressive slow spatial) ----
      unless the worksheet just handed its tool bar back (reverse
@@ -835,14 +852,14 @@ export const LANDING_HTML = `<!DOCTYPE html>
   }
 
   /* ---- indicator initial placement + resizes ---- */
-  placeIndicator(currentJoin ? tabJoin : tabNew);
+  placeIndicator(TABS[currentTab][0]);
   window.addEventListener('resize', function () {
-    placeIndicator(currentJoin ? tabJoin : tabNew);
+    placeIndicator(TABS[currentTab][0]);
     releaseCardHeight();  /* a pinned height must not fight real reflows */
   });
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(function () {
-      placeIndicator(currentJoin ? tabJoin : tabNew);
+      placeIndicator(TABS[currentTab][0]);
       releaseCardHeight();
     });
   }
