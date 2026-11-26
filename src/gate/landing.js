@@ -221,11 +221,11 @@ export const LANDING_HTML = `<!DOCTYPE html>
     padding:16px 22px;cursor:pointer;
     touch-action:manipulation;
     transition:
-      transform 350ms cubic-bezier(.42,1.67,.21,.90),
+      transform 250ms cubic-bezier(.42,1.67,.21,.90),  /* release: quick spring back */
       background-color 150ms cubic-bezier(.31,.94,.34,1);
   }
   .btn:active{
-    transform:scale(.94);
+    transform:scale(.97);
     transition:
       transform 150ms cubic-bezier(.31,.94,.34,1),
       background-color 150ms cubic-bezier(.31,.94,.34,1);
@@ -379,9 +379,12 @@ export const LANDING_HTML = `<!DOCTYPE html>
     spatialFast:  "cubic-bezier(.42,1.67,.21,.90)",   /* 350ms — indicator, button release */
     spatialSlow:  "cubic-bezier(.39,1.29,.35,.98)",   /* 650ms — card entrance */
     effectsFast:  "cubic-bezier(.31,.94,.34,1)",      /* 150ms — squish, pane out */
-    effectsSlow:  "cubic-bezier(.34,.88,.34,1)"       /* 300ms — pane in */
+    effectsSlow:  "cubic-bezier(.34,.88,.34,1)",      /* 300ms — fades */
+    /* tab switches happen often: crisp, no overshoot, well under 300ms */
+    easeOut:      "cubic-bezier(.23,1,.32,1)",
+    easeInOut:    "cubic-bezier(.77,0,.175,1)"
   };
-  var D = { spatialFast: 350, spatialSlow: 650, effectsFast: 150, effectsSlow: 300 };
+  var D = { spatialFast: 350, spatialSlow: 650, effectsFast: 150, effectsSlow: 300, tab: 240, paneIn: 200 };
 
   var tabJoin = document.getElementById('tab-join');
   var tabNew = document.getElementById('tab-new');
@@ -444,7 +447,9 @@ export const LANDING_HTML = `<!DOCTYPE html>
   function releaseCardHeight() {
     if (!sizeAnim && gateCard.style.height) gateCard.style.height = '';
   }
-  function morphCard(change) {
+  /* opts.quick: tab switches — 240ms, no settle bounce. The bouncy
+     650ms settle is kept for the rare moments (the code reveal). */
+  function morphCard(change, opts) {
     /* drop any running height animation and release any pin from a
        finished one FIRST — otherwise both measurements below read the
        pinned value, fromH === toH, and the card keeps its stale pin */
@@ -459,7 +464,9 @@ export const LANDING_HTML = `<!DOCTYPE html>
     gateCard.style.height = fromH + 'px';
     var a = gateCard.animate(
       [{ height: fromH + 'px' }, { height: toH + 'px' }],
-      { duration: D.spatialSlow, easing: E.spatialSlow, fill: 'both' }
+      opts && opts.quick
+        ? { duration: D.tab, easing: E.easeInOut, fill: 'both' }
+        : { duration: D.spatialSlow, easing: E.spatialSlow, fill: 'both' }
     );
     sizeAnim = a;
     a.onfinish = function () {
@@ -734,18 +741,22 @@ export const LANDING_HTML = `<!DOCTYPE html>
     indicator.style.width = m.width + 'px';
     indicator.style.transform = 'translateX(' + m.left + 'px)';
   }
+  /* Starts from wherever the indicator IS (mid-slide included), so a
+     click during a slide retargets instead of jumping back. One
+     animation at a time; the inline style holds the resting place. */
   function slideIndicator(fromTab, toTab) {
-    if (!indicator.animate) { placeIndicator(toTab); return; }
-    var a = tabMetrics(fromTab), b = tabMetrics(toTab);
+    var b = tabMetrics(toTab);
+    if (!indicator.animate || RM) { placeIndicator(toTab); return; }
+    var ir = indicator.getBoundingClientRect(), tr = tabsBox.getBoundingClientRect();
+    var a = { left: ir.left - tr.left, width: ir.width };
+    indicator.getAnimations().forEach(function (x) { x.cancel(); });
+    placeIndicator(toTab);
     indicator.animate(
       [
-        { width: a.width + 'px', transform: 'translateX(' + a.left + 'px) scaleX(1) scaleY(1)' },
-        { width: ((a.width + b.width) / 2) + 'px',
-          transform: 'translateX(' + ((a.left + b.left) / 2) + 'px) scaleX(1.15) scaleY(.90)',
-          offset: 0.5 },
-        { width: b.width + 'px', transform: 'translateX(' + b.left + 'px) scaleX(1) scaleY(1)' }
+        { width: a.width + 'px', transform: 'translateX(' + a.left + 'px)' },
+        { width: b.width + 'px', transform: 'translateX(' + b.left + 'px)' }
       ],
-      { duration: D.spatialFast, easing: E.spatialFast, fill: 'both' }
+      { duration: D.tab, easing: E.easeInOut }
     );
   }
 
@@ -776,13 +787,15 @@ export const LANDING_HTML = `<!DOCTYPE html>
         if (p.getAnimations) p.getAnimations().forEach(function (a) { a.cancel(); });
         p.hidden = p !== inEl;
       });
-      if (!RM && inEl.animate) {
+      if (inEl.animate) {
+        /* reduced motion keeps the fade (it explains the swap) and drops the rise */
         inEl.animate(
-          [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' }],
-          { duration: D.effectsSlow, easing: E.effectsSlow, fill: 'both' }
+          RM ? [{ opacity: 0 }, { opacity: 1 }]
+             : [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+          { duration: D.paneIn, easing: E.easeOut }
         );
       }
-    });
+    }, { quick: true });
   }
   Object.keys(TABS).forEach(function (k) {
     TABS[k][0].addEventListener('click', function () { select(k); });
