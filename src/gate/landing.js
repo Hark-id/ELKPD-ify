@@ -66,6 +66,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
     --d-effects-default: 200ms;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  /* controls, not content: a long press shouldn't select the label */
+  .tab,.btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   html,body{height:100%}
   body{
     margin:0;
@@ -162,7 +164,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   .tab:active{
     border-radius:var(--shape-morph);
   }
-  .tab:hover{color:var(--on-surface)}
+  @media (hover:hover) and (pointer:fine){ .tab:hover{color:var(--on-surface)} }  /* no sticky hover after a tap */
   .tab[aria-selected="true"]{color:var(--on-primary-container)}
   .tab:focus-visible{outline:3px solid rgba(255,218,217,.85);outline-offset:2px}
   .pane[hidden]{display:none}
@@ -228,7 +230,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
       transform 150ms cubic-bezier(.31,.94,.34,1),
       background-color 150ms cubic-bezier(.31,.94,.34,1);
   }
-  .btn:hover{background:var(--primary-hover)}
+  @media (hover:hover) and (pointer:fine){ .btn:hover{background:var(--primary-hover)} }
   .btn:disabled{opacity:.65;cursor:default;transform:none}
   .btn:focus-visible{outline:3px solid rgba(255,255,255,.8);outline-offset:3px}
 
@@ -318,7 +320,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <form class="pane" id="pane-join" role="tabpanel" aria-labelledby="tab-join">
     <div class="tfield">
       <input id="code" name="code" type="text" placeholder=" " autocomplete="off"
-             autocapitalize="characters" spellcheck="false" required>
+             autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
       <label for="code">Kode Grup</label>
     </div>
     <button class="btn" id="btn-join" type="submit">Buka Lembar Kerja</button>
@@ -328,7 +330,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <!-- create -->
   <form class="pane" id="pane-new" role="tabpanel" aria-labelledby="tab-new" hidden>
     <div class="tfield">
-      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60">
+      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60" enterkeyhint="done">
       <label for="label">Nama Kelompok (opsional)</label>
     </div>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
