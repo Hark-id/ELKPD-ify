@@ -24,7 +24,7 @@ try {
   // ---- Studio, group mode: import, then one button to a room
   await A.goto(BASE + '/studio/?untuk=kelompok');
   check('group mode speaks to students', await A.eval(`document.querySelector('.drop h1').textContent.includes('kelompok')`));
-  check('group mode shows no account UI', await A.eval(`document.getElementById('cloudBox').hidden && document.getElementById('accountBtn').hidden`));
+  check('group mode shows no account UI', await A.eval(`document.getElementById('loginBtn').hidden && document.getElementById('accountBtn').hidden`));
   await A.eval(`document.getElementById('sampleBtn').click()`);
   await A.waitFor(`!document.getElementById('editor').hidden && document.querySelector('.esh-sheet')?.dataset.ready`, 60000);
   check('the main button creates a room', await A.eval(`document.getElementById('exportBtn').textContent`) === 'Buat ruang');

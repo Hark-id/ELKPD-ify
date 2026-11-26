@@ -2,110 +2,131 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#fff8f7">
 <title>ELKPD Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700&display=swap">
 <link rel="stylesheet" href="studio.css">
 </head>
 <body>
-<header class="appbar">
-  <a class="brand" href="./" aria-label="ELKPD Studio">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V6a1 1 0 011-1h9"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 14l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 10l6 6 6-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 17H5v-7h14v7h-2M8 14h8v6H8z"/></symbol>
+  <symbol id="i-class" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 15c3 0 6 1.5 6 4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-pdf" viewBox="0 0 48 48"><path d="M13 5h16l10 10v26a2 2 0 01-2 2H13a2 2 0 01-2-2V7a2 2 0 012-2z"/><path d="M29 5v10h10"/><path d="M18 26h12M18 32h12M18 20h5"/></symbol>
+</svg>
+
+<header class="appbar" id="appbar">
+  <a class="brand" id="brand" href="./" aria-label="ELKPD Studio">
     <span class="brand-mark" aria-hidden="true"></span>
     <span class="brand-name">ELKPD <b>Studio</b></span>
   </a>
-  <input id="title" class="title-input" type="text" placeholder="Judul lembar" aria-label="Judul lembar" hidden spellcheck="false">
+  <button class="icon-btn" id="homeBtn" type="button" aria-label="Kembali ke awal" title="Kembali" hidden><svg><use href="#i-back"/></svg></button>
+  <input id="title" class="title-input" type="text" placeholder="Judul lembar" aria-label="Judul lembar" hidden spellcheck="false" maxlength="120">
   <div class="appbar-spacer"></div>
   <div class="seg" id="modeSeg" role="radiogroup" aria-label="Mode" hidden>
+    <span class="seg-ind" id="segInd" aria-hidden="true"></span>
     <button type="button" role="radio" aria-checked="true" data-mode="design">Sunting</button>
     <button type="button" role="radio" aria-checked="false" data-mode="preview">Coba isi</button>
     <button type="button" role="radio" aria-checked="false" data-mode="class" id="classTab" hidden>Kelas</button>
   </div>
-  <button class="btn tonal" id="undoBtn" type="button" title="Urungkan (Ctrl+Z)" hidden disabled>Urungkan</button>
-  <button class="btn filled" id="exportBtn" type="button" aria-haspopup="menu" hidden>Simpan &amp; bagikan</button>
-  <button class="avatar" id="accountBtn" type="button" hidden aria-haspopup="menu" title="Akun"></button>
+  <div class="appbar-spacer"></div>
+  <div class="hist" id="hist" hidden>
+    <button class="icon-btn" id="undoBtn" type="button" aria-label="Urungkan" title="Urungkan (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+    <button class="icon-btn" id="redoBtn" type="button" aria-label="Ulangi" title="Ulangi (Ctrl+Shift+Z)" disabled><svg><use href="#i-redo"/></svg></button>
+  </div>
+  <button class="btn filled" id="exportBtn" type="button" aria-haspopup="menu" aria-expanded="false" hidden>Bagikan</button>
+  <button class="btn tonal" id="loginBtn" type="button" hidden>Masuk</button>
+  <button class="avatar" id="accountBtn" type="button" hidden aria-haspopup="menu" aria-label="Akun"></button>
   <div class="menu" id="accountMenu" role="menu" hidden>
     <p class="menu-head" id="accountName"></p>
     <button type="button" role="menuitem" id="logoutBtn"><b>Keluar</b></button>
   </div>
   <div class="menu" id="exportMenu" role="menu" hidden>
-    <button type="button" role="menuitem" data-export="publish" id="publishItem" hidden><b id="publishLabel">Terbitkan untuk kelas</b><span id="publishNote">Simpan ke akun Anda, lalu buat ruang untuk tiap kelompok.</span></button>
-    <button type="button" role="menuitem" data-export="html"><b>Lembar siap pakai (.html)</b><span>Satu file: bisa dibuka di HP, diisi, dicetak.</span></button>
-    <button type="button" role="menuitem" data-export="json"><b>Berkas lembar (.json)</b><span>Untuk disunting lagi di Studio.</span></button>
-    <button type="button" role="menuitem" data-export="new"><b>Impor PDF lain</b><span>Lembar ini tetap tersimpan di peramban.</span></button>
+    <button type="button" role="menuitem" data-export="publish" id="publishItem" hidden>
+      <svg><use href="#i-class"/></svg><span><b id="publishLabel">Terbitkan untuk kelas</b><small id="publishNote">Buat ruang untuk tiap kelompok</small></span></button>
+    <button type="button" role="menuitem" data-export="html">
+      <svg><use href="#i-file"/></svg><span><b>Unduh lembar (.html)</b><small>Bisa diisi di HP, tanpa internet</small></span></button>
+    <button type="button" role="menuitem" data-export="json">
+      <svg><use href="#i-copy"/></svg><span><b>Unduh berkas sunting (.json)</b><small>Untuk dibuka lagi di Studio</small></span></button>
   </div>
 </header>
 
 <main id="app">
-  <!-- 1. start: drop a PDF -->
-  <section class="start" id="start">
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Pilih PDF lembar kerja">
-      <div class="drop-art" aria-hidden="true">
-        <svg viewBox="0 0 96 96"><rect x="20" y="10" width="56" height="74" rx="8"/><path d="M32 34h32M32 46h32M32 58h20"/><circle cx="68" cy="68" r="16"/><path d="M68 60v16M60 68h16"/></svg>
+  <!-- 1. start -->
+  <section class="start view" id="start">
+    <div class="start-inner">
+      <div class="drop" id="drop">
+        <svg class="drop-art" aria-hidden="true"><use href="#i-pdf"/></svg>
+        <h1 id="startTitle">Jadikan PDF lembar kerja bisa diisi</h1>
+        <p class="start-sub" id="startSub" hidden></p>
+        <button class="btn filled big" id="pickBtn" type="button">Pilih PDF</button>
+        <p class="drop-hint"><span class="fine-only">atau seret ke sini · </span><button class="link" id="sampleBtn" type="button">coba contoh</button></p>
+        <input id="pdfInput" type="file" accept="application/pdf,.pdf,.json,application/json" hidden>
       </div>
-      <h1>Ubah PDF lembar kerja jadi lembar yang bisa diisi bersama</h1>
-      <p>Seret PDF ke sini, atau <span class="link">pilih berkas</span>. PDF diproses di peramban Anda dan tidak diunggah ke mana pun.</p>
-      <input id="pdfInput" type="file" accept="application/pdf,.pdf,.json,application/json" hidden>
+      <section class="recent" id="recent" hidden aria-labelledby="recentHead">
+        <h2 id="recentHead">Lanjutkan</h2>
+        <ul id="recentList"></ul>
+      </section>
     </div>
-    <div class="start-row">
-      <button class="btn text" id="sampleBtn" type="button">Coba dengan contoh lembar</button>
-      <span class="dot" aria-hidden="true"></span>
-      <button class="btn text" id="openJsonBtn" type="button">Buka berkas lembar (.json)</button>
-    </div>
-    <div class="recent" id="cloudBox" hidden>
-      <div class="cloud-head"><h2>Proyek saya</h2><button class="btn tonal" id="loginBtn" type="button" hidden>Masuk / daftar</button></div>
-      <p class="cloud-note" id="cloudNote"></p>
-      <ul id="projectList"></ul>
-    </div>
-    <div class="recent" id="recent" hidden>
-      <h2>Terakhir dibuka</h2>
-      <ul id="recentList"></ul>
-    </div>
+    <div class="drop-veil" id="dropVeil" aria-hidden="true"><span>Lepaskan untuk membuka</span></div>
   </section>
 
   <!-- 2. importing -->
-  <section class="busy" id="busy" hidden>
-    <div class="busy-card">
+  <section class="busy view" id="busy" hidden>
+    <div class="busy-card" role="status" aria-live="polite">
       <svg class="spinner" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="18"/></svg>
       <h2 id="busyTitle">Membaca PDF…</h2>
       <div class="bar"><div class="bar-fill" id="busyBar"></div></div>
-      <p id="busyNote">Menyiapkan…</p>
+      <p id="busyNote"></p>
     </div>
   </section>
 
   <!-- 3. editor -->
-  <section class="editor" id="editor" hidden>
-    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Alat sunting">
-      <button class="tool" id="addTool" type="button" aria-pressed="false" title="Gambar kotak isian baru (A)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M12 9v6M9 12h6"/></svg>
-        <span>Tambah isian</span>
-      </button>
-      <span class="tb-sep"></span>
-      <span class="tb-note" id="tbNote">Klik kotak isian untuk menyuntingnya. Klik dua kali teks untuk memperbaiki.</span>
-      <span class="appbar-spacer"></span>
-      <button class="tool" id="zoomOut" type="button" title="Perkecil">−</button>
-      <span class="zoom" id="zoomLabel">100%</span>
-      <button class="tool" id="zoomIn" type="button" title="Perbesar">+</button>
-    </div>
+  <section class="editor view" id="editor" hidden>
     <div class="workspace">
       <div class="canvas" id="canvas"></div>
-      <aside class="inspector" id="inspector" aria-label="Pengaturan"></aside>
+      <div class="dock" id="dock" role="toolbar" aria-label="Alat">
+        <button class="dock-btn" id="addTool" type="button" aria-pressed="false" title="Gambar kotak isian (A)"><svg><use href="#i-plus"/></svg><span>Isian</span></button>
+        <button class="dock-btn" id="clearBtn" type="button" hidden>Kosongkan</button>
+        <button class="dock-btn" id="printBtn" type="button" hidden><svg><use href="#i-print"/></svg><span>Cetak</span></button>
+        <span class="dock-sep" aria-hidden="true"></span>
+        <button class="dock-btn sq" id="zoomOut" type="button" aria-label="Perkecil"><svg><use href="#i-minus"/></svg></button>
+        <button class="zoom" id="zoomLabel" type="button" title="Pas lebar">100%</button>
+        <button class="dock-btn sq" id="zoomIn" type="button" aria-label="Perbesar"><svg><use href="#i-plus"/></svg></button>
+      </div>
+      <aside class="panel" id="panel" aria-label="Panel">
+        <button class="sheet-handle" id="sheetHandle" type="button" aria-expanded="false"><span class="grip" aria-hidden="true"></span><span id="handleText"></span></button>
+        <div class="panel-body" id="inspector"></div>
+      </aside>
     </div>
   </section>
 </main>
 
 <div class="scrim" id="authScrim" hidden>
   <form class="dialog" id="authForm" autocomplete="on">
+    <h2 class="dialog-title">Akun guru</h2>
     <div class="seg auth-seg" role="tablist">
       <button type="button" role="tab" aria-checked="true" data-auth="login">Masuk</button>
       <button type="button" role="tab" aria-checked="false" data-auth="register">Daftar</button>
     </div>
-    <p class="sub" id="authSub">Akun untuk guru: simpan lembar, buat ruang kelompok, dan lihat jawaban. Siswa tidak perlu akun.</p>
     <label class="fld"><span>Nama pengguna</span><input id="authUser" name="username" type="text" autocomplete="username" required spellcheck="false" autocapitalize="none"></label>
     <label class="fld" id="authDisplayFld" hidden><span>Nama tampilan</span><input id="authDisplay" type="text" autocomplete="name" placeholder="mis. Bu Sari"></label>
     <label class="fld"><span>Kata sandi</span><input id="authPass" name="password" type="password" autocomplete="current-password" required minlength="8"></label>
-    <label class="fld" id="authCodeFld" hidden><span>Kode pendaftaran</span><input id="authCode" type="text" autocomplete="off"><small>Diberikan oleh admin sekolah.</small></label>
+    <label class="fld" id="authCodeFld" hidden><span>Kode pendaftaran dari admin</span><input id="authCode" type="text" autocomplete="off"></label>
     <p class="form-err" id="authErr" hidden></p>
+    <p class="dialog-note">Siswa tidak perlu akun.</p>
     <div class="row end"><button class="btn text" type="button" id="authCancel">Batal</button><button class="btn filled" type="submit" id="authSubmit">Masuk</button></div>
   </form>
 </div>
