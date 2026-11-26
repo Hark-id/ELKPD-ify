@@ -21,13 +21,20 @@ const srv = await startServer(PORT);
 const b = await launch({ width: 1440, height: 900 });
 const tmp = mkdtempSync(join(tmpdir(), 'elkpd-ocr-'));
 const BASE = `http://127.0.0.1:${PORT}/src/studio/`;
+let asked = false;
 
 // Import a PDF through the Studio's file input; resolves with the sheet.
-async function importFile(path, query = '') {
+// `pick`: answer the "PDF ini hasil pindai" question through the UI.
+async function importFile(path, query = '', pick = null) {
   await b.goto(BASE + query);
   await b.waitFor(`!document.getElementById('start').hidden`);
   const t0 = Date.now();
   await b.setFile('#pdfInput', path);
+  if (pick) {
+    await b.waitFor(`!document.getElementById('scanChoice').hidden`, 60000);
+    asked = await b.eval(`document.getElementById('busy').querySelector('.busy-card').hidden && document.activeElement?.dataset.ocr === 'scan'`);
+    await b.eval(`document.querySelector('[data-ocr=${pick}]').click()`);
+  }
   await b.waitFor(`!document.getElementById('editor').hidden && document.querySelector('.esh-sheet')?.dataset.ready`, 240000);
   const ms = Date.now() - t0;
   const sheet = await b.eval(`JSON.parse(JSON.stringify(studio.sheet))`);
@@ -60,7 +67,8 @@ try {
   const { validateSheet } = await import('../src/sheet/validate.js');
 
   // ---- 1. the multiple-choice scan, default (invisible text layer)
-  let s = await importFile(scans['scan-pg.pdf'].path);
+  let s = await importFile(scans['scan-pg.pdf'].path, '', 'scan');
+  check('scan: the Studio asks how to take a scan, keeping its look focused first', asked);
   let p = s.pages[0];
   check('scan: OCR ran on the page', !!(p.stats && p.stats.ocr), JSON.stringify(p.stats && p.stats.ocr));
   const strs = p.text.map((t) => t.str);
@@ -119,9 +127,27 @@ try {
   check('digital: same fields as the default mode', p.fields.length === 9 && p.fields.filter((f) => f.kind === 'choice').length === 4, p.fields.length);
   check('digital: the sheet validates', validateSheet(s).ok, JSON.stringify(validateSheet(s).error || ''));
   check('digital: the page renders the text', await b.eval(`[...document.querySelectorAll('.esh-t')].filter(e => getComputedStyle(e).opacity === '1').length`) >= 30);
+  // unsure words: marked on the page, counted in the panel, walked with Enter
+  // (these synthetic scans read cleanly, so two words are made doubtful here)
+  await b.eval(`(() => { const t = studio.sheet.pages[0].text.filter(t => t.alpha == null && t.conf >= 0.6); t[3].conf = 0.3; t[8].conf = 0.4;
+    document.querySelector('[data-mode=preview]').click(); document.querySelector('[data-mode=design]').click(); })()`);
+  await b.waitFor(`document.querySelector('.canvas.design .esh-sheet')?.dataset.ready`);
+  const nUnsure = await b.eval(`document.querySelectorAll('.esh-t.unsure').length`);
+  const expected = await b.eval(`window.studio.sheet.pages[0].text.filter(t => t.conf < 0.6).length`);
+  check('digital: unsure words are marked on the page', nUnsure === expected && expected >= 2, `${nUnsure} marked, ${expected} below 0.6`);
+  {
+    check('digital: the panel offers to check them', await b.eval(`document.querySelector('.todo.soft')?.textContent.includes('${expected} kata')`));
+    await b.eval(`document.querySelector('.todo.soft').click()`);
+    await b.waitFor(`document.querySelector('.esh-t[contenteditable=true]')`, 5000);
+    await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await new Promise((r) => setTimeout(r, 400));
+    const left = await b.eval(`studio.sheet.pages[0].text.filter(t => t.conf < 0.6).length`);
+    check('digital: Enter confirms a word and opens the next', left === expected - 1 && (left === 0 || await b.eval(`!!document.querySelector('.esh-t[contenteditable=true]')`)), `${expected} -> ${left}`);
+    await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  }
 
   // ---- 3. the Studio sample, scanned (two pages)
-  s = await importFile(scans['scan-kolam.pdf'].path);
+  s = await importFile(scans['scan-kolam.pdf'].path, '?ocr=scan');
   const p1 = s.pages[0], p2 = s.pages[1];
   check('kolam scan: both pages OCRed', s.pages.every((q) => q.stats.ocr && q.text.length > 15), s.pages.map((q) => q.text.length).join(' '));
   const lab = p1.fields.map((f) => f.label);
@@ -141,7 +167,7 @@ try {
   check('born-digital: needsOcr is false', await b.eval(`import('../sheet/ocr.js').then(m => m.needsOcr(studio.sheet))`) === false);
 
   // ---- 5. mixed: a digital page, then a scan
-  s = await importFile(scans['mixed.pdf'].path);
+  s = await importFile(scans['mixed.pdf'].path, '?ocr=scan');
   check('mixed: the digital page is left alone', !s.pages[0].stats.ocr && s.pages[0].text.some((t) => /Halaman digital/.test(t.str)) && s.pages[0].text.every((t) => t.conf == null));
   check('mixed: the scanned page is OCRed', !!s.pages[1].stats.ocr && s.pages[1].fields.filter((f) => f.kind === 'choice').length === 4, s.pages[1].fields.length);
   check('mixed: field ids stay unique', new Set(s.pages.flatMap((q) => q.fields.map((f) => f.id))).size === s.pages.reduce((n, q) => n + q.fields.length, 0));
