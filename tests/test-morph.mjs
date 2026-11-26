@@ -100,13 +100,13 @@ async function main() {
   {
     const s = await openSession();
     const H = await s.evalJS(`Math.round(document.querySelector('.card').getBoundingClientRect().height)`);
-    const r = await s.evalJS(`(${SAMPLE_AND_CLICK.replace('(clickExpr) => new Promise', 'clickExpr => new Promise')})("document.getElementById('tab-new').click()")`);
+    const r = await s.evalJS(`(${SAMPLE_AND_CLICK.replace('(clickExpr) => new Promise', 'clickExpr => new Promise')})("document.getElementById('tab-sheet').click()")`);  /* join and new are the same height; sheet differs */
     const a = summarize(r);
-    check('A pane-new: final height stable', a.to === r.samples[r.samples.length - 2] || true, `from=${r.from} to=${a.to}`);
-    check('A pane-new: animation ran (>=4 distinct heights)', a.distinct >= 4, `${a.distinct} distinct`);
+    check('A pane-sheet: final height stable', a.to === r.samples[r.samples.length - 2] || true, `from=${r.from} to=${a.to}`);
+    check('A pane-sheet: animation ran (>=4 distinct heights)', a.distinct >= 4, `${a.distinct} distinct`);
     const nat = await s.evalJS(`(function(){const c=document.querySelector('.card');const p=c.style.height;c.style.height='';const h=Math.round(c.getBoundingClientRect().height);c.style.height=p;return h;})()`);
-    check('A pane-new: final == natural height', Math.round(a.to) === nat, `to=${Math.round(a.to)} natural=${nat}`);
-    check('A pane-new: height pinned via style after finish', (await s.evalJS(`document.querySelector('.card').style.height`)) !== '');
+    check('A pane-sheet: final == natural height', Math.round(a.to) === nat, `to=${Math.round(a.to)} natural=${nat}`);
+    check('A pane-sheet: height pinned via style after finish', (await s.evalJS(`document.querySelector('.card').style.height`)) !== '');
 
     const r2 = await s.evalJS(`(${SAMPLE_AND_CLICK.replace('(clickExpr) => new Promise', 'clickExpr => new Promise')})("document.getElementById('tab-join').click()")`);
     const a2 = summarize(r2);

@@ -123,15 +123,12 @@ export const LANDING_HTML = `<!DOCTYPE html>
     color:var(--on-surface-variant);
   }
   h1{        /* headlineLarge (expressive weight) */
-    margin:0 0 8px;
+    margin:0 0 20px;
     font-size:clamp(28px,6vw,34px);
     line-height:1.12;
     font-weight:800;
     letter-spacing:-.01em;
     color:var(--on-surface);
-  }
-  .sub{      /* bodyMedium */
-    margin:0 0 20px;font-size:14px;line-height:1.55;color:var(--on-surface-variant)
   }
 
   /* ============================================================
@@ -205,8 +202,9 @@ export const LANDING_HTML = `<!DOCTYPE html>
     transition:transform .3s var(--ease-emphasized);
   }
   .tfield:focus-within::after{background:var(--accent);transform:scaleX(1)}
-  #code{letter-spacing:.22em;text-transform:uppercase;font-weight:700}  .support{margin:8px 2px 0;font-size:12px;line-height:1.5;color:var(--on-surface-variant)}  /* bodySmall */
-  .err{margin:10px 2px 0;font-size:12px;font-weight:600;color:var(--error);min-height:17px}  /* bodySmall */
+  #code{letter-spacing:.22em;text-transform:uppercase;font-weight:700}
+  .err{margin:10px 2px 0;font-size:12px;font-weight:600;color:var(--error)}  /* bodySmall */
+  .err:empty{display:none}  /* no dead space under the button when all is well */
 
   /* ---- filled button (M3 Expressive): primary fill, labelLarge, pill.
          Pop via the official conversion curves: press squishes with fast
@@ -256,13 +254,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
   }
   .warn{margin:14px 2px 0;font-size:12px;line-height:1.55;color:var(--error)}
   /* third pane (#19): a link styled as the primary button */
-  .pane-title{margin:2px 2px 8px;font-size:17px;font-weight:700;line-height:1.3;color:var(--on-surface)}
-  .pane-lead{margin:0 2px 10px;font-size:14px;line-height:1.55;color:var(--on-surface)}
+  .pane-lead{margin:2px 2px 0;font-size:15px;line-height:1.5;color:var(--on-surface)}
   .btn-link{display:block;box-sizing:border-box;text-align:center;text-decoration:none}
-  .foot{
-    margin:20px 0 0;
-    font-size:11px;line-height:1.6;color:var(--on-surface-variant);
-  }
   @media (prefers-reduced-motion:reduce){
     *{transition:none !important;animation:none !important}
   }
@@ -311,15 +304,14 @@ export const LANDING_HTML = `<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
-  <p class="eyebrow">SMA Negeri 3 Yogyakarta &middot; Bahasa Indonesia</p>
+  <p class="eyebrow">SMA Negeri 3 Yogyakarta</p>
   <h1>LKPD Teks Cerpen</h1>
-  <p class="sub">Lembar kerja bersama &mdash; satu kode per grup, satu lembar per grup.</p>
 
   <div class="tabs" role="tablist">
     <span class="indicator" aria-hidden="true"></span>
     <button class="tab" role="tab" id="tab-join" aria-selected="true" aria-controls="pane-join">Masuk</button>
     <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Grup Baru</button>
-    <button class="tab" role="tab" id="tab-sheet" aria-selected="false" aria-controls="pane-sheet">e-LKPD Baru</button>
+    <button class="tab" role="tab" id="tab-sheet" aria-selected="false" aria-controls="pane-sheet">Dari PDF</button>
   </div>
 
   <!-- join -->
@@ -329,7 +321,6 @@ export const LANDING_HTML = `<!DOCTYPE html>
              autocapitalize="characters" spellcheck="false" required>
       <label for="code">Kode Grup</label>
     </div>
-    <p class="support">Kode diberikan oleh ketua kelompok Anda. Contoh: A7KQ9Z</p>
     <button class="btn" id="btn-join" type="submit">Buka Lembar Kerja</button>
     <p class="err" id="err-join"></p>
   </form>
@@ -340,7 +331,6 @@ export const LANDING_HTML = `<!DOCTYPE html>
       <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60">
       <label for="label">Nama Kelompok (opsional)</label>
     </div>
-    <p class="support">Kode dibuat otomatis. Bagikan hanya kepada anggota kelompok Anda.</p>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
     <p class="err" id="err-new"></p>
 
@@ -349,7 +339,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
         <p class="lbl">Kode Grup Anda</p>
         <div class="val" id="new-code">&mdash;</div>
       </div>
-      <p class="warn">Simpan kode ini sekarang. Kode tidak dapat ditampilkan lagi nanti &mdash; tanpa kode, kelompok Anda tidak bisa masuk kembali.</p>
+      <p class="warn">Simpan kode ini &mdash; tidak bisa ditampilkan lagi.</p>
       <button class="btn" id="btn-enter" type="button">Buka Lembar Kerja</button>
     </div>
   </form>
@@ -357,13 +347,10 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <!-- student rooms (#15): a room from the teacher's own PDF. Only
        navigates, so it's a div, not a form. -->
   <div class="pane" id="pane-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden>
-    <h2 class="pane-title">Buat e-LKPD dari PDF</h2>
-    <p class="pane-lead">Punya PDF dari guru? Unggah PDF-nya, periksa kotak jawaban yang terdeteksi, lalu bagikan kode ruang ke kelompokmu. Tidak perlu akun.</p>
-    <p class="support">Beda dengan <b>Grup Baru</b>: itu membuat ruang untuk LKPD Teks Cerpen ini, sedangkan di sini lembarnya dari PDF milikmu sendiri.</p>
-    <a class="btn btn-link" id="btn-sheet" href="/studio/?untuk=kelompok">Buat dari PDF</a>
+    <p class="pane-lead">PDF dari guru jadi lembar kerja grup.</p>
+    <a class="btn btn-link" id="btn-sheet" href="/studio/?untuk=kelompok">Pilih PDF</a>
   </div>
 
-  <p class="foot">Setiap grup memiliki lembar kerja sendiri. Kode grup Anda hanya membuka lembar kerja kelompok Anda, dan jawaban tidak pernah tercampur antar grup.</p>
 
   <!-- loading stage: while the login request is in flight the card
        becomes a square at the naming card's centre and holds a
