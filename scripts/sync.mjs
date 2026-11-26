@@ -22,9 +22,25 @@ const MAP = [
   ['src/gate/landing.js', 'build/gate/public/landing.js'],
   ['src/gate/admin.js', 'build/gate/public/admin.js'],
   ['src/gate/_routes.json', 'build/gate/public/_routes.json'],
+  ['src/gate/projects.js', 'build/gate/public/projects.js'],
   ['src/gate/wrangler.toml', 'build/gate/wrangler.toml'],
   ['src/worksheet/worksheet.html', 'build/gate/public/worksheet.html'],
   ['src/worksheet/wave.js', 'build/gate/public/wave.js'],
+  // Studio + sheet player (#12): static, public (code only, no data). The
+  // gate's _routes.json excludes /studio/* and /sheet/* so Pages serves them
+  // directly; nothing here is behind the room gate.
+  ['src/sheet/import.js', 'build/gate/public/sheet/import.js'],
+  ['src/sheet/player.js', 'build/gate/public/sheet/player.js'],
+  ['src/sheet/validate.js', 'build/gate/public/sheet/validate.js'], // also imported by projects.js
+  ['src/sheet/room.html', 'build/gate/public/sheet/room.html'],     // served by the gate to project rooms
+  ['src/studio/index.html', 'build/gate/public/studio/index.html'],
+  ['src/studio/studio.css', 'build/gate/public/studio/studio.css'],
+  ['src/studio/studio.js', 'build/gate/public/studio/studio.js'],
+  ['src/studio/store.js', 'build/gate/public/studio/store.js'],
+  ['src/studio/export.js', 'build/gate/public/studio/export.js'],
+  ['src/studio/cloud.js', 'build/gate/public/studio/cloud.js'],
+  ['src/studio/play.html', 'build/gate/public/studio/play.html'],
+  ['src/studio/samples/ekosistem-kolam.pdf', 'build/gate/public/studio/samples/ekosistem-kolam.pdf'],
   ['src/rooms/rooms.js', 'build/rooms/rooms.js'],
   ['src/rooms/wrangler.toml', 'build/rooms/wrangler.toml'],
   ['src/webhook/webhook.js', 'build/webhook/webhook.js'],

@@ -185,6 +185,39 @@ Known limits:
   their own rule tweaks. Scanned PDFs have no text or vectors at all and
   would need OCR: out of scope.
 
+## Real-world PDFs (#12)
+
+`src/sheet/import.js` was later run on eight public worksheets from
+producers it had never seen: Word 365, Google Docs, Canva (two), a RICOH
+scan stored with `/Rotate 90`, LibreOffice Writer, PowerPoint 2010 and
+Keynote/Quartz. The files are not in the repo (copyright); the general rules
+they led to are pinned by the synthetic "real:" checks in
+`tests/test-import.mjs`. What changed:
+
+- **Clipped pictures vanished.** The clip was put on the `<image>`, whose own
+  transform also applies to a `userSpaceOnUse` clip path. It now sits on a
+  wrapping `<g>`. Word clips every picture, so every Word picture was lost.
+- **Tiling patterns that are not Skia glows** (Word hatches, PowerPoint
+  textures) run through the interpreter into an SVG `<pattern>` instead of a
+  flat grey, which also stops them being taken for empty answer boxes.
+- **Annotation appearances** (ink over a scan, stamps) get pdf.js' clean
+  state, clip and matrices, so they land where the PDF puts them.
+- **Images are encoded once per object** and placed with `<use>`, and shrunk
+  when far denser than drawn (4 px/pt). A Keynote sheet with 210 placements
+  of three 1200 px icons went from 39 s / 8.6 MB to 2 s / 1.2 MB.
+- **Fields:** short blanks (`... x + ... y`, `.... dari ......`) when they
+  stand alone; blank space under a numbered or `?` prompt (`source: "space"`);
+  rounded cards with a large radius; full-column rules around a heading are
+  no longer answer lines.
+
+Still open: blanks that are part of a picture (Word shapes exported as one
+image), lined answer areas inside a picture, multiple-choice options with no
+box to tick, zebra tables with no rules (cells merge in alternate rows), and
+fonts that are not on the web-font list (Canva Sans, Fredoka One, Century
+Gothic) fall back to a generic face. A scan imports as one picture with no
+fields, by design; in Node it is re-encoded as PNG (large), in the browser
+as JPEG.
+
 ## Absolute layout vs. the real sheet
 
 The scaffold is a **faithful picture with holes cut in it**. That is the
