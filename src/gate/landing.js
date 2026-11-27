@@ -737,9 +737,20 @@ export const LANDING_HTML = `<!DOCTYPE html>
     indicator.style.width = m.width + 'px';
     indicator.style.transform = 'translateX(' + m.left + 'px)';
   }
+  /* Starts from where the indicator IS, not from the previous tab's
+     box: a click mid-slide carries on from the current position instead
+     of jumping back first. The previous slide is cancelled (they used
+     to pile up, each with fill:'both') and the inline style holds the
+     resting place, so no fill is needed. Curve, duration and squash are
+     unchanged. */
   function slideIndicator(fromTab, toTab) {
     if (!indicator.animate) { placeIndicator(toTab); return; }
-    var a = tabMetrics(fromTab), b = tabMetrics(toTab);
+    var cs = getComputedStyle(indicator);
+    var a = { left: new DOMMatrixReadOnly(cs.transform === 'none' ? '' : cs.transform).m41,
+              width: parseFloat(cs.width) };
+    var b = tabMetrics(toTab);
+    indicator.getAnimations().forEach(function (x) { x.cancel(); });
+    placeIndicator(toTab);
     indicator.animate(
       [
         { width: a.width + 'px', transform: 'translateX(' + a.left + 'px) scaleX(1) scaleY(1)' },
@@ -748,7 +759,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
           offset: 0.5 },
         { width: b.width + 'px', transform: 'translateX(' + b.left + 'px) scaleX(1) scaleY(1)' }
       ],
-      { duration: D.spatialFast, easing: E.spatialFast, fill: 'both' }
+      { duration: D.spatialFast, easing: E.spatialFast }
     );
   }
 
