@@ -66,6 +66,8 @@ export const LANDING_HTML = `<!DOCTYPE html>
     --d-effects-default: 200ms;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  /* controls, not content: a long press shouldn't select the label */
+  .tab,.btn{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
   html,body{height:100%}
   body{
     margin:0;
@@ -123,15 +125,12 @@ export const LANDING_HTML = `<!DOCTYPE html>
     color:var(--on-surface-variant);
   }
   h1{        /* headlineLarge (expressive weight) */
-    margin:0 0 8px;
+    margin:0 0 20px;
     font-size:clamp(28px,6vw,34px);
     line-height:1.12;
     font-weight:800;
     letter-spacing:-.01em;
     color:var(--on-surface);
-  }
-  .sub{      /* bodyMedium */
-    margin:0 0 20px;font-size:14px;line-height:1.55;color:var(--on-surface-variant)
   }
 
   /* ============================================================
@@ -165,7 +164,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   .tab:active{
     border-radius:var(--shape-morph);
   }
-  .tab:hover{color:var(--on-surface)}
+  @media (hover:hover) and (pointer:fine){ .tab:hover{color:var(--on-surface)} }  /* no sticky hover after a tap */
   .tab[aria-selected="true"]{color:var(--on-primary-container)}
   .tab:focus-visible{outline:3px solid rgba(255,218,217,.85);outline-offset:2px}
   .pane[hidden]{display:none}
@@ -205,8 +204,9 @@ export const LANDING_HTML = `<!DOCTYPE html>
     transition:transform .3s var(--ease-emphasized);
   }
   .tfield:focus-within::after{background:var(--accent);transform:scaleX(1)}
-  #code{letter-spacing:.22em;text-transform:uppercase;font-weight:700}  .support{margin:8px 2px 0;font-size:12px;line-height:1.5;color:var(--on-surface-variant)}  /* bodySmall */
-  .err{margin:10px 2px 0;font-size:12px;font-weight:600;color:var(--error);min-height:17px}  /* bodySmall */
+  #code{letter-spacing:.22em;text-transform:uppercase;font-weight:700}
+  .err{margin:10px 2px 0;font-size:12px;font-weight:600;color:var(--error)}  /* bodySmall */
+  .err:empty{display:none}  /* no dead space under the button when all is well */
 
   /* ---- filled button (M3 Expressive): primary fill, labelLarge, pill.
          Pop via the official conversion curves: press squishes with fast
@@ -230,7 +230,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
       transform 150ms cubic-bezier(.31,.94,.34,1),
       background-color 150ms cubic-bezier(.31,.94,.34,1);
   }
-  .btn:hover{background:var(--primary-hover)}
+  @media (hover:hover) and (pointer:fine){ .btn:hover{background:var(--primary-hover)} }
   .btn:disabled{opacity:.65;cursor:default;transform:none}
   .btn:focus-visible{outline:3px solid rgba(255,255,255,.8);outline-offset:3px}
 
@@ -255,12 +255,10 @@ export const LANDING_HTML = `<!DOCTYPE html>
     text-indent:.34em;
   }
   .warn{margin:14px 2px 0;font-size:12px;line-height:1.55;color:var(--error)}
-  .pdf-link{display:block;margin:14px 2px 0;text-align:center;font-size:13px;font-weight:600;color:var(--primary);text-decoration:underline;text-underline-offset:3px;-webkit-tap-highlight-color:transparent;border-radius:8px}
-  .pdf-link:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
-  .foot{
-    margin:20px 0 0;
-    font-size:11px;line-height:1.6;color:var(--on-surface-variant);
-  }
+  /* third pane (#19): a link styled as the primary button */
+  .support{margin:8px 2px 0;font-size:12px;line-height:1.5;color:var(--on-surface-variant)}  /* bodySmall */
+  .pane-lead{margin:2px 2px 0;font-size:15px;line-height:1.5;color:var(--on-surface)}
+  .btn-link{display:block;box-sizing:border-box;text-align:center;text-decoration:none}
   @media (prefers-reduced-motion:reduce){
     *{transition:none !important;animation:none !important}
   }
@@ -309,24 +307,24 @@ export const LANDING_HTML = `<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
-  <p class="eyebrow">SMA Negeri 3 Yogyakarta &middot; Bahasa Indonesia</p>
+  <p class="eyebrow">SMA Negeri 3 Yogyakarta</p>
   <h1>LKPD Teks Cerpen</h1>
-  <p class="sub">Lembar kerja bersama &mdash; satu kode per grup, satu lembar per grup.</p>
 
   <div class="tabs" role="tablist">
     <span class="indicator" aria-hidden="true"></span>
     <button class="tab" role="tab" id="tab-join" aria-selected="true" aria-controls="pane-join">Masuk</button>
-    <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Buat Grup Baru</button>
+    <button class="tab" role="tab" id="tab-new" aria-selected="false" aria-controls="pane-new">Grup Baru</button>
+    <button class="tab" role="tab" id="tab-sheet" aria-selected="false" aria-controls="pane-sheet">Dari PDF</button>
   </div>
 
   <!-- join -->
   <form class="pane" id="pane-join" role="tabpanel" aria-labelledby="tab-join">
     <div class="tfield">
       <input id="code" name="code" type="text" placeholder=" " autocomplete="off"
-             autocapitalize="characters" spellcheck="false" required>
+             aria-describedby="code-hint" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
       <label for="code">Kode Grup</label>
     </div>
-    <p class="support">Kode diberikan oleh ketua kelompok Anda. Contoh: A7KQ9Z</p>
+    <p class="support" id="code-hint">Contoh: A7KQ9Z</p>
     <button class="btn" id="btn-join" type="submit">Buka Lembar Kerja</button>
     <p class="err" id="err-join"></p>
   </form>
@@ -334,13 +332,11 @@ export const LANDING_HTML = `<!DOCTYPE html>
   <!-- create -->
   <form class="pane" id="pane-new" role="tabpanel" aria-labelledby="tab-new" hidden>
     <div class="tfield">
-      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60">
+      <input id="label" name="label" type="text" placeholder=" " autocomplete="off" maxlength="60" enterkeyhint="done" aria-describedby="label-hint">
       <label for="label">Nama Kelompok (opsional)</label>
     </div>
-    <p class="support">Kode dibuat otomatis. Bagikan hanya kepada anggota kelompok Anda.</p>
+    <p class="support" id="label-hint">Bagikan kode hanya ke anggota grupmu.</p>
     <button class="btn" id="btn-new" type="submit">Buat Kode Grup</button>
-    <!-- student rooms (#15): bring the teacher's PDF instead of this sheet -->
-    <a class="pdf-link" href="/studio/?untuk=kelompok">Punya PDF dari guru? Buat ruang dari PDF</a>
     <p class="err" id="err-new"></p>
 
     <div id="created" hidden>
@@ -348,12 +344,18 @@ export const LANDING_HTML = `<!DOCTYPE html>
         <p class="lbl">Kode Grup Anda</p>
         <div class="val" id="new-code">&mdash;</div>
       </div>
-      <p class="warn">Simpan kode ini sekarang. Kode tidak dapat ditampilkan lagi nanti &mdash; tanpa kode, kelompok Anda tidak bisa masuk kembali.</p>
+      <p class="warn">Simpan kode ini &mdash; tidak bisa ditampilkan lagi.</p>
       <button class="btn" id="btn-enter" type="button">Buka Lembar Kerja</button>
     </div>
   </form>
 
-  <p class="foot">Setiap grup memiliki lembar kerja sendiri. Kode grup Anda hanya membuka lembar kerja kelompok Anda, dan jawaban tidak pernah tercampur antar grup.</p>
+  <!-- student rooms (#15): a room from the teacher's own PDF. Only
+       navigates, so it's a div, not a form. -->
+  <div class="pane" id="pane-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden>
+    <p class="pane-lead">PDF dari gurumu, bukan lembar bawaan.</p>
+    <a class="btn btn-link" id="btn-sheet" href="/studio/?untuk=kelompok">Pilih PDF</a>
+  </div>
+
 
   <!-- loading stage: while the login request is in flight the card
        becomes a square at the naming card's centre and holds a
@@ -386,8 +388,12 @@ export const LANDING_HTML = `<!DOCTYPE html>
 
   var tabJoin = document.getElementById('tab-join');
   var tabNew = document.getElementById('tab-new');
+  var tabSheet = document.getElementById('tab-sheet');
   var paneJoin = document.getElementById('pane-join');
   var paneNew = document.getElementById('pane-new');
+  var paneSheet = document.getElementById('pane-sheet');
+  /* tab key -> [tab, pane]; the key is what sessionStorage remembers */
+  var TABS = { join: [tabJoin, paneJoin], 'new': [tabNew, paneNew], sheet: [tabSheet, paneSheet] };
   var codeInput = document.getElementById('code');
   var labelInput = document.getElementById('label');
 
@@ -427,7 +433,7 @@ export const LANDING_HTML = `<!DOCTYPE html>
   var gateCard = document.querySelector('.card');
   var gateLoader = document.getElementById('gateLoader');
 
-  var currentJoin = true;
+  var currentTab = 'join';
   var indTask = null;
   var sizeAnim = null;
 
@@ -762,27 +768,28 @@ export const LANDING_HTML = `<!DOCTYPE html>
      always wins and no onfinish race can leave panes invisible. The
      incoming pane then rises in on an effects curve (purely decorative). */
   function select(which) {
-    var join = which === 'join';
     /* cheapest possible guard: one variable read — clicking the tab
        that is already active does nothing at all */
-    if (join === currentJoin) return;
-    currentJoin = join;
-    tabJoin.setAttribute('aria-selected', join ? 'true' : 'false');
-    tabNew.setAttribute('aria-selected', join ? 'false' : 'true');
+    if (which === currentTab || !Object.prototype.hasOwnProperty.call(TABS, which)) return;
+    var from = currentTab;
+    currentTab = which;
+    Object.keys(TABS).forEach(function (k) {
+      TABS[k][0].setAttribute('aria-selected', k === which ? 'true' : 'false');
+    });
 
-    slideIndicator(join ? tabNew : tabJoin, join ? tabJoin : tabNew);
+    slideIndicator(TABS[from][0], TABS[which][0]);
 
-    var outEl = join ? paneNew : paneJoin;
-    var inEl = join ? paneJoin : paneNew;
+    var inEl = TABS[which][1];
     morphCard(function () {
       /* remember the tab across reloads */
-      try { sessionStorage.setItem('lkpd-gate-tab', join ? 'join' : 'new'); } catch (e) {}
-      /* clear stale fill:forwards animations from superseded swaps */
-      [outEl, inEl].forEach(function (p) {
+      try { sessionStorage.setItem('lkpd-gate-tab', which); } catch (e) {}
+      /* clear stale fill:forwards animations from superseded swaps, and
+         hide every other pane: a rapid 1->2->3 must leave exactly one */
+      Object.keys(TABS).forEach(function (k) {
+        var p = TABS[k][1];
         if (p.getAnimations) p.getAnimations().forEach(function (a) { a.cancel(); });
+        p.hidden = p !== inEl;
       });
-      outEl.hidden = true;
-      inEl.hidden = false;
       if (!RM && inEl.animate) {
         inEl.animate(
           [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'translateY(0)' }],
@@ -791,17 +798,19 @@ export const LANDING_HTML = `<!DOCTYPE html>
       }
     });
   }
-  tabJoin.addEventListener('click', function () { select('join'); });
-  tabNew.addEventListener('click', function () { select('new'); });
+  Object.keys(TABS).forEach(function (k) {
+    TABS[k][0].addEventListener('click', function () { select(k); });
+  });
 
   /* ---- restore the last-active tab across reloads ---- */
   try {
-    currentJoin = sessionStorage.getItem('lkpd-gate-tab') !== 'new';
+    var saved = sessionStorage.getItem('lkpd-gate-tab');
+    if (Object.prototype.hasOwnProperty.call(TABS, saved)) currentTab = saved;
   } catch (e) { /* storage unavailable */ }
-  paneJoin.hidden = !currentJoin;
-  paneNew.hidden = currentJoin;
-  tabJoin.setAttribute('aria-selected', currentJoin ? 'true' : 'false');
-  tabNew.setAttribute('aria-selected', currentJoin ? 'false' : 'true');
+  Object.keys(TABS).forEach(function (k) {
+    TABS[k][1].hidden = k !== currentTab;
+    TABS[k][0].setAttribute('aria-selected', k === currentTab ? 'true' : 'false');
+  });
 
   /* ---- entrance: settle bounce (expressive slow spatial) ----
      unless the worksheet just handed its tool bar back (reverse
@@ -846,14 +855,14 @@ export const LANDING_HTML = `<!DOCTYPE html>
   }
 
   /* ---- indicator initial placement + resizes ---- */
-  placeIndicator(currentJoin ? tabJoin : tabNew);
+  placeIndicator(TABS[currentTab][0]);
   window.addEventListener('resize', function () {
-    placeIndicator(currentJoin ? tabJoin : tabNew);
+    placeIndicator(TABS[currentTab][0]);
     releaseCardHeight();  /* a pinned height must not fight real reflows */
   });
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(function () {
-      placeIndicator(currentJoin ? tabJoin : tabNew);
+      placeIndicator(TABS[currentTab][0]);
       releaseCardHeight();
     });
   }
