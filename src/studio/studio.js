@@ -21,13 +21,15 @@ import { cloud, refreshMe, authDialog, logout, projects } from './cloud.js';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38';
 const $ = (id) => document.getElementById(id);
 const r1 = (v) => Math.round(v * 10) / 10;
-const KIND_LABEL = { text: 'Singkat', textarea: 'Panjang', checkbox: 'Centang', date: 'Tanggal', number: 'Angka' };
+const KIND_LABEL = { text: 'Singkat', textarea: 'Panjang', checkbox: 'Centang', date: 'Tanggal', number: 'Angka', choice: 'Pilihan' };
+const UNSURE = 0.6; // OCR runs below this confidence are flagged for review
 const KIND_ICON = {
   text: '<path d="M4 17h16"/><path d="M7 13V7h5"/>',
   textarea: '<path d="M4 7h16M4 12h16M4 17h10"/>',
   checkbox: '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   date: '<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10h16M9 4v4M15 4v4"/>',
   number: '<path d="M10 4L8 20M16 4l-2 16M5 9h15M4 15h15"/>',
+  choice: '<circle cx="7" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="7" cy="7" r="1" fill="currentColor"/><path d="M13 7h7M13 17h7"/>',
 };
 const SOURCE = { leader: 'titik-titik', line: 'garis', lines: 'garis tulis', table: 'tabel', box: 'kotak', checkbox: 'kotak centang', acroform: 'formulir PDF', space: 'ruang kosong', ocr: 'hasil pindai' };
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
@@ -290,16 +292,50 @@ async function importBytes(bytes, name) {
         $('busyNote').textContent = `Halaman ${done} dari ${total}`;
       },
     });
+    // Scanned pages (#23): ask how to take them, at the moment it matters,
+    // then OCR on this device. Keep the scan's look, or turn it into real
+    // editable text on clean paper ("digital book").
+    const ocr = await import('../sheet/ocr.js');
+    let ocrFailed = false;
+    if (ocr.needsOcr(s)) {
+      const pick = QS.get('ocr') || await askScanMode();
+      const digital = pick === 'digital';
+      $('busyTitle').textContent = 'Membaca teks pindaian';
+      $('busyNote').textContent = 'Memuat pengenal teks…';
+      setBar(0);
+      try {
+        await ocr.ocrSheet(lib, bytes, s, {
+          digital,
+          docOptions: { standardFontDataUrl: `${PDFJS}/standard_fonts/`, cMapUrl: `${PDFJS}/cmaps/`, cMapPacked: true },
+          onProgress({ page, pages, pct }) {
+            setBar(pct);
+            $('busyNote').textContent = `Halaman ${page} dari ${pages}`;
+          },
+        });
+      } catch (e) { console.warn('OCR failed', e); ocrFailed = true; }
+    }
     const n = s.pages.reduce((k, p) => k + p.fields.length, 0);
-    const textless = s.pages.every((p) => !p.text.length);
     openSheet(s, null);
-    if (textless) snack('PDF hasil pindai: tambahkan isian dengan tombol Isian.');
+    if (ocrFailed) snack('Teks pindaian tidak terbaca (perlu internet). Tambahkan isian dengan tombol Isian.');
     else snack(n ? `${n} isian ditemukan` : 'Belum ada isian. Tambahkan dengan tombol Isian.');
   } catch (e) {
     console.error(e);
     show('start');
     snack(/password/i.test(String(e && e.name) + e) ? 'PDF ini dikunci kata sandi.' : 'PDF tidak bisa dibaca: ' + (e && e.message || e));
   }
+}
+
+// The busy screen asks once, before OCR starts: the spinner steps aside
+// for two choices, the first one (keep the scan) is the safe default.
+function askScanMode() {
+  return new Promise((resolve) => {
+    const card = $('busy').querySelector('.busy-card');
+    const box = $('scanChoice');
+    card.hidden = true;
+    box.hidden = false;
+    box.querySelectorAll('[data-ocr]').forEach((b) => { b.onclick = () => { box.hidden = true; card.hidden = false; resolve(b.dataset.ocr); }; });
+    box.querySelector('[data-ocr]').focus();
+  });
 }
 
 function openSheet(s, key, proj = null) {
@@ -533,10 +569,24 @@ function setDrawing(on) {
   else if ($('snack').textContent.startsWith('Ketuk atau seret') || $('snack').textContent.startsWith('Seret di halaman')) hideSnack();
 }
 
+const textRun = (id) => { for (const p of sheet.pages) { const t = p.text.find((q) => q.id === id); if (t) return t; } return null; };
+const unsureRuns = () => sheet.pages.flatMap((p) => p.text.filter((t) => t.conf != null && t.conf < UNSURE && t.alpha !== 0));
+
+// Jump to a text run and open it for editing (the "kata ragu" walk).
+function editRun(id) {
+  const el = $('canvas').querySelector(`.esh-t[data-id="${CSS.escape(id)}"]`);
+  if (!el) return;
+  if (PHONE.matches) setSheetOpen(false);
+  el.scrollIntoView({ block: 'center', behavior: REDUCED.matches ? 'auto' : 'smooth' });
+  el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+}
+
 // Double-click a text run to fix a typo or reword it.
 function wireText() {
   $('canvas').querySelectorAll('.esh-t').forEach((el) => {
     el.title = 'Klik dua kali untuk mengubah';
+    const run = textRun(el.dataset.id);
+    if (run && run.conf != null && run.conf < UNSURE && run.alpha !== 0) { el.classList.add('unsure'); el.title = 'Mungkin salah baca. Klik dua kali untuk memperbaiki'; }
     el.addEventListener('dblclick', () => {
       if (el.isContentEditable) return;
       const id = el.dataset.id;
@@ -545,22 +595,27 @@ function wireText() {
       el.focus();
       const sel = getSelection();
       sel.selectAllChildren(el);
+      let next = false;
       const done = (save) => {
         el.removeEventListener('blur', onBlur);
         el.removeEventListener('keydown', onKey);
         el.contentEditable = 'false';
         const str = el.textContent.replace(/\s+/g, ' ').trim();
-        const t = sheet.pages.flatMap((p) => p.text).find((q) => q.id === id);
-        if (save && t && str !== t.str) {
+        const t = textRun(id);
+        const unsure = !!t && t.conf != null;
+        // Saving an unsure word, changed or not, means a person checked it.
+        if (save && t && (str !== t.str || unsure)) {
           commit(() => {
-            if (str) { t.str = str; delete t.w; } // natural width: the old PDF width no longer applies
-            else sheet.pages.forEach((p) => { p.text = p.text.filter((q) => q.id !== id); });
+            if (!str) sheet.pages.forEach((p) => { p.text = p.text.filter((q) => q.id !== id); });
+            else { if (str !== t.str) { t.str = str; delete t.w; } delete t.conf; } // edited: natural width, the PDF width no longer applies
           }, { rerender: true });
         } else renderSheet();
+        // Enter on a flagged word goes on to the next one.
+        if (save && next && unsure) { const u = unsureRuns()[0]; if (u) requestAnimationFrame(() => editRun(u.id)); }
       };
       const onBlur = () => done(true);
       const onKey = (ev) => {
-        if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); }
+        if (ev.key === 'Enter') { ev.preventDefault(); next = true; el.blur(); }
         if (ev.key === 'Escape') { ev.preventDefault(); done(false); }
       };
       el.addEventListener('blur', onBlur);
@@ -621,6 +676,12 @@ function overviewPanel() {
       h('button', { class: 'btn tonal', type: 'button', onclick: () => setDrawing(true) }, icon('plus'), 'Tambah isian')));
     return wrap;
   }
+  // Words the OCR wasn't sure of (digital pages): one button walks to them.
+  const unsure = unsureRuns();
+  if (unsure.length) {
+    wrap.append(h('button', { class: 'todo soft', type: 'button', onclick: () => editRun(unsure[0].id) },
+      h('span', {}, `Periksa ${unsure.length} kata ragu`), svg('<path d="M9 6l6 6-6 6"/>')));
+  }
   // The one thing left to do, as a button that does it.
   if (unnamed.length) {
     wrap.append(h('button', { class: 'todo', type: 'button', onclick: () => { select(unnamed[0].f.id, { scroll: true }); requestAnimationFrame(() => { const n = $('inspector').querySelector('.name-input'); if (n && !PHONE.matches) n.focus(); }); } },
@@ -666,10 +727,13 @@ function fieldPanel(f, pg, pi) {
       if (ok && v !== f.id) edit(() => { f.id = v; selected = v; });
     } }), idErr);
 
-  const kinds = h('div', { class: 'kinds', role: 'group', 'aria-label': 'Jenis isian' }, Object.keys(KIND_LABEL).map((k) =>
+  // choice only exists where OCR found the options; it can be left, not entered
+  const kindList = Object.keys(KIND_LABEL).filter((k) => k !== 'choice' || f.kind === 'choice');
+  const kinds = h('div', { class: 'kinds', role: 'group', 'aria-label': 'Jenis isian', style: `grid-template-columns:repeat(${kindList.length},1fr)` }, kindList.map((k) =>
     h('button', { type: 'button', 'aria-pressed': String(f.kind === k), onclick: () => { if (f.kind !== k) edit(() => {
       f.kind = k;
       if (k !== 'textarea') { delete f.lineGap; delete f.lines; }
+      if (k !== 'choice') delete f.options;
       if (k === 'checkbox') { const s = Math.min(f.w, f.h, 14); f.w = f.h = s; }
     }); } }, kindIcon(k), KIND_LABEL[k])));
 

@@ -155,6 +155,18 @@ main{flex:1;min-height:0;position:relative}
 .spinner{width:44px;height:44px;animation:spin .9s linear infinite;stroke:none}
 .spinner circle{fill:none;stroke:var(--primary);stroke-width:4;stroke-linecap:round;stroke-dasharray:80 200}
 @keyframes spin{to{transform:rotate(360deg)}}
+.scan-choice{width:min(420px,100%);text-align:center;animation:view-in var(--d-spring) var(--spring) both}
+.scan-choice h2{font-weight:500;font-size:22px;margin:0 0 8px}
+.scan-choice .p-sub{margin:0 0 20px}
+.choice-card{display:block;width:100%;text-align:left;border:1px solid var(--outline-variant);background:var(--surface-container-lowest);border-radius:var(--shape-lg);padding:16px 18px;margin:0 0 10px;
+  transition:border-radius var(--d-spring-fast) var(--spring-fast),transform var(--d-fast) var(--ease-out),border-color var(--d-fast) var(--effects),background-color var(--d-fast) var(--effects)}
+.choice-card:active{transform:scale(.98);border-radius:var(--shape-xl)}
+.choice-card b{display:block;font-size:16px;font-weight:600}
+.choice-card small{display:block;font-size:13px;color:var(--on-surface-variant);margin-top:4px}
+.choice-card:first-of-type{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+@media (hover:hover) and (pointer:fine){.choice-card:hover{background:var(--surface-container-low)}}
+/* words OCR wasn't sure of, until someone fixes them */
+.design .esh-t.unsure{background:rgba(255,193,7,.32);box-shadow:0 1.5px 0 #c58b00;border-radius:1px}
 .bar{height:4px;border-radius:2px;background:var(--surface-container-highest);overflow:hidden}
 .bar-fill{height:100%;width:100%;background:var(--primary);border-radius:2px;transform-origin:left;transform:scaleX(0);transition:transform var(--d-spring) var(--spring)}
 
@@ -254,6 +266,7 @@ main{flex:1;min-height:0;position:relative}
 .fl-k svg{width:16px;height:16px;stroke-width:1.8}
 .fl-l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fl-empty{color:var(--on-surface-variant);font-style:italic}
+.todo.soft{background:var(--surface-container-high);color:var(--on-surface)}
 .fl-dot{width:8px;height:8px;border-radius:50%;background:#c58b00;flex:none}
 .empty{text-align:center;padding:32px 8px;color:var(--on-surface-variant);font-size:14px;line-height:20px}
 .empty .btn{margin-top:16px}

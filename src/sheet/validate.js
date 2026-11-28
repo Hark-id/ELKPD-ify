@@ -11,7 +11,7 @@ export const LIMITS = {
   backgroundBytes: 4e6, str: 2000, label: 200, title: 120,
 };
 const FONT_STACK = /^\s*('[A-Za-z0-9 ]{1,60}'|serif|sans-serif|monospace)(\s*,\s*('[A-Za-z0-9 ]{1,60}'|serif|sans-serif|monospace)){0,7}\s*$/;
-const KINDS = new Set(['text', 'textarea', 'checkbox', 'date', 'number']);
+const KINDS = new Set(['text', 'textarea', 'checkbox', 'date', 'number', 'choice']);
 const ID = /^[A-Za-z0-9_-]{1,60}$/;
 // Field ids become DOM ids next to the app's own chrome; these would
 // shadow it (getElementById returns the first match).
@@ -56,6 +56,7 @@ export function validateSheet(input) {
       if (!t || !ID.test(t.id) || !num(t.x) || !num(t.baseline) || !num(t.size) || !str(t.str, LIMITS.str)) return fail(at + ': bad text run');
       if (t.font != null && !ID.test(t.font)) return fail(at + ': bad text font');
       if (t.color != null && !/^#[0-9a-f]{6}$/i.test(t.color)) return fail(at + ': bad text colour');
+      if (t.conf != null && !(num(t.conf) && t.conf >= 0 && t.conf <= 1)) return fail(at + ': bad text conf');
     }
     if (!Array.isArray(p.fields) || p.fields.length > LIMITS.fieldsPerPage) return fail(at + ': bad fields');
     for (const f of p.fields) {
@@ -64,6 +65,16 @@ export function validateSheet(input) {
       if (!KINDS.has(f.kind) || !num(f.x) || !num(f.y) || !num(f.w) || !num(f.h) || f.w <= 0 || f.h <= 0) return fail(at + ': bad field ' + f.id);
       if (!str(f.label || '', LIMITS.label) || !str(f.placeholder || '', LIMITS.label) || !str(f.prompt || '', 600)) return fail(at + ': field text too long ' + f.id);
       if (f.lineGap != null && !(num(f.lineGap) && f.lineGap > 0)) return fail(at + ': bad lineGap ' + f.id);
+      if (f.kind === 'choice') {
+        const o = f.options;
+        if (!Array.isArray(o) || o.length < 2 || o.length > 10) return fail(at + ': bad choice options ' + f.id);
+        const vals = new Set();
+        for (const op of o) {
+          if (!op || typeof op.value !== 'string' || !/^[A-Za-z0-9]{1,4}$/.test(op.value) || vals.has(op.value) ||
+            !num(op.x) || !num(op.y) || !num(op.w) || !num(op.h) || op.w <= 0 || op.h <= 0) return fail(at + ': bad choice option ' + f.id);
+          vals.add(op.value);
+        }
+      }
     }
   }
   return { ok: true, sheet };
