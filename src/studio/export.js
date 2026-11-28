@@ -15,16 +15,22 @@ export async function buildStandaloneHtml(sheet) {
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(sheet.title)}</title>
 <meta name="generator" content="ELKPD Studio">
 <style>
   html,body{margin:0;background:#ece6e5;font-family:"Roboto Flex",Roboto,Arial,sans-serif;color:#231919}
-  .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fff8f7;border-bottom:1px solid #d8c2c0}
-  .bar h1{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bar span{font-size:12px;color:#534342;white-space:nowrap}
-  .bar button{height:36px;padding:0 16px;border:0;border-radius:999px;font:500 14px/1 inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-radius .15s}
-  .bar button:active{border-radius:8px}
+  *{-webkit-tap-highlight-color:transparent}
+  .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px 8px 16px;padding-top:max(8px,env(safe-area-inset-top));background:#fff8f7;border-bottom:1px solid #d8c2c0}
+  .bar div{flex:1;min-width:0}
+  .bar h1{margin:0;font-size:16px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar span{display:block;font-size:12px;line-height:16px;color:#534342;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .bar button{height:40px;padding:0 16px;border:0;border-radius:999px;font:500 14px/1 inherit;cursor:pointer;-webkit-user-select:none;user-select:none;
+    transition:border-radius .35s cubic-bezier(.42,1.67,.21,.90),transform .15s cubic-bezier(.31,.94,.34,1)}
+  .bar button:active{border-radius:8px;transform:scale(.97)}
+  .line{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden}
+  .line i{display:block;height:100%;background:#a80029;transform-origin:left;transform:scaleX(0);transition:transform .5s cubic-bezier(.38,1.21,.22,1)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
   .bar .p{background:#a80029;color:#fff}
   .bar .t{background:#ffdad9;color:#2c1515}
   .bar button:focus-visible{outline:3px solid #a80029;outline-offset:2px}
@@ -34,10 +40,10 @@ export async function buildStandaloneHtml(sheet) {
 </head>
 <body>
 <div class="bar">
-  <h1>${esc(sheet.title)}</h1>
-  <span id="saved" aria-live="polite"></span>
+  <div><h1>${esc(sheet.title)}</h1><span id="saved" aria-live="polite"></span></div>
   <button class="t" id="clear" type="button">Kosongkan</button>
   <button class="p" type="button" onclick="window.print()">Cetak</button>
+  <div class="line" aria-hidden="true"><i id="line"></i></div>
 </div>
 <div id="sheet"></div>
 <script type="module">
@@ -47,22 +53,31 @@ const KEY = ${JSON.stringify(key)};
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
 const note = document.getElementById('saved');
-let t = 0;
+const total = sheet.pages.reduce((k, p) => k + p.fields.length, 0);
+let t = 0, state = '';
+function count() {
+  const n = Object.values(player.values()).filter((v) => v !== '' && v != null && v !== false).length;
+  note.textContent = (total ? n + '/' + total + ' terisi' : '') + (state ? ' · ' + state : '');
+  document.getElementById('line').style.transform = 'scaleX(' + (total ? n / total : 0) + ')';
+}
 const player = createPlayer(document.getElementById('sheet'), sheet, {
   values: saved,
   onInput() {
     clearTimeout(t);
     t = setTimeout(() => {
-      try { localStorage.setItem(KEY, JSON.stringify(player.values())); note.textContent = 'Tersimpan di perangkat ini'; }
-      catch (e) { note.textContent = 'Tidak bisa menyimpan'; }
+      try { localStorage.setItem(KEY, JSON.stringify(player.values())); state = 'tersimpan'; }
+      catch (e) { state = 'tidak bisa menyimpan'; }
+      count();
     }, 300);
   },
 });
+count();
 document.getElementById('clear').onclick = () => {
   if (!confirm('Kosongkan semua jawaban di lembar ini?')) return;
   player.clear();
   try { localStorage.removeItem(KEY); } catch (e) {}
-  note.textContent = '';
+  state = '';
+  count();
 };
 </script>
 </body>

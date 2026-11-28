@@ -1,9 +1,14 @@
 // ELKPD Studio: PDF -> reviewed, fillable sheet, entirely in the browser.
 //
-//   start  : drop a PDF (or a sheet.json, or the sample)
+//   start  : pick or drop a PDF (or a sheet.json, or the sample); continue
+//            a recent sheet or a published project
 //   busy   : pdf.js + src/sheet/import.js, page by page
-//   editor : design mode (move/resize/add/delete fields, fix text) and
-//            preview mode (the real player, reflow and all)
+//   editor : Sunting (fix the answer boxes and text), Coba isi (the real
+//            player, reflow and all), Kelas (live rooms of a project)
+//
+// Layout rule: tools sit where the work is. The dock floats on the canvas,
+// page actions sit on their page, a field's settings sit in the panel only
+// while it is selected, and the panel is a bottom sheet on phones.
 //
 // State is one sheet object; every edit goes through commit(), which keeps
 // an undo stack and autosaves to IndexedDB.
@@ -16,15 +21,17 @@ import { cloud, refreshMe, authDialog, logout, projects } from './cloud.js';
 const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38';
 const $ = (id) => document.getElementById(id);
 const r1 = (v) => Math.round(v * 10) / 10;
-const KIND_LABEL = { text: 'Teks singkat', textarea: 'Teks panjang', checkbox: 'Kotak centang', date: 'Tanggal', number: 'Angka' };
+const KIND_LABEL = { text: 'Singkat', textarea: 'Panjang', checkbox: 'Centang', date: 'Tanggal', number: 'Angka' };
 const KIND_ICON = {
-  text: '<svg viewBox="0 0 24 24"><path d="M4 16h16"/><path d="M7 12V8m0 0h4"/></svg>',
-  textarea: '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>',
-  checkbox: '<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
-  date: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10h16M9 4v4M15 4v4"/></svg>',
-  number: '<svg viewBox="0 0 24 24"><path d="M9 4L7 20M17 4l-2 16M4 9h16M3 15h16"/></svg>',
+  text: '<path d="M4 17h16"/><path d="M7 13V7h5"/>',
+  textarea: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+  checkbox: '<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  date: '<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10h16M9 4v4M15 4v4"/>',
+  number: '<path d="M10 4L8 20M16 4l-2 16M5 9h15M4 15h15"/>',
 };
-const KIND_LETTER = { text: 'T', textarea: '¶', checkbox: '✓', date: 'D', number: '#' };
+const SOURCE = { leader: 'titik-titik', line: 'garis', lines: 'garis tulis', table: 'tabel', box: 'kotak', checkbox: 'kotak centang', acroform: 'formulir PDF', space: 'ruang kosong', ocr: 'hasil pindai' };
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+const PHONE = matchMedia('(max-width: 840px)');
 
 let sheet = null;     // the document being edited
 let docKey = null;    // IndexedDB key
@@ -38,6 +45,8 @@ let project = null;   // { id, role } when this sheet is published to an account
 let classData = null; // { rooms: [...] } from /answers, refreshed while in the Kelas tab
 let classRoom = null; // selected room id in the Kelas tab
 let classTimer = 0;
+let popId = null;     // a field that was just added: it pops in once
+let panelFrom = '';   // direction the next panel slides in from
 const undo = [], redo = [];
 
 // Student mode (#15): /studio/?untuk=kelompok turns a PDF into a group room
@@ -49,34 +58,62 @@ const ROOM_EDIT = QS.get('ruang') === 'edit';
 const STUDENT = GROUP || ROOM_EDIT;
 
 // ------------------------------------------------------------ helpers
+const svg = (inner, cls) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true'); if (cls) s.setAttribute('class', cls); s.innerHTML = inner; return s; };
+const icon = (id) => svg(`<use href="#i-${id}"/>`);
+
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (v === true) el.setAttribute(k, '');
+    else if (v !== false && v != null) el.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) el.append(k.nodeType ? k : String(k));
+  return el;
+}
+
 function show(view) {
-  for (const v of ['start', 'busy', 'editor']) $(v).hidden = v !== view;
+  for (const v of ['start', 'busy', 'editor']) {
+    const el = $(v);
+    const was = !el.hidden;
+    el.hidden = v !== view;
+    if (v === view && !was) { el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter'); }
+  }
   const inEditor = view === 'editor';
-  $('title').hidden = $('modeSeg').hidden = $('exportBtn').hidden = $('undoBtn').hidden = !inEditor;
+  document.body.classList.toggle('editor-on', inEditor);
+  $('brand').hidden = inEditor;
+  $('homeBtn').hidden = !inEditor || ROOM_EDIT;
+  $('title').hidden = $('modeSeg').hidden = $('exportBtn').hidden = $('hist').hidden = !inEditor;
   $('classTab').hidden = !inEditor || !project;
-  $('publishItem').hidden = !cloud.available;
   if (STUDENT) {
     $('exportBtn').textContent = ROOM_EDIT ? 'Simpan ke ruang' : 'Buat ruang';
     $('exportBtn').removeAttribute('aria-haspopup');
     $('accountBtn').hidden = true;
   }
+  renderLogin();
+  if (inEditor) requestAnimationFrame(() => placeSegInd(false));
   if (!inEditor) stopClassPolling();
 }
 
-// A small in-app text dialog (the auth dialog's look); resolves the text,
-// or null when cancelled.
+function renderLogin() {
+  $('loginBtn').hidden = STUDENT || !cloud.available || !!cloud.user || $('start').hidden;
+}
+
+// A small in-app text dialog; resolves the text, or null when cancelled.
 function askText({ title, sub, label, placeholder, ok }) {
   return new Promise((resolve) => {
     const input = h('input', { type: 'text', maxlength: '60', placeholder: placeholder || '', id: 'askInput' });
     const done = (v) => { scrim.remove(); resolve(v); };
     const scrim = h('div', { class: 'scrim', onclick: (e) => { if (e.target === scrim) done(null); } },
       h('form', { class: 'dialog', id: 'askForm', onsubmit: (e) => { e.preventDefault(); done(input.value.trim()); } },
-        h('h2', { style: 'margin:0;font-size:22px;font-weight:500' }, title),
-        sub ? h('p', { class: 'sub' }, sub) : null,
+        h('h2', { class: 'dialog-title' }, title),
+        sub ? h('p', { class: 'p-sub' }, sub) : null,
         h('label', { class: 'fld' }, h('span', {}, label), input),
         h('div', { class: 'row end' },
           h('button', { class: 'btn text', type: 'button', onclick: () => done(null) }, 'Batal'),
           h('button', { class: 'btn filled', type: 'submit' }, ok))));
+    scrim.addEventListener('keydown', (e) => { if (e.key === 'Escape') done(null); });
     document.body.appendChild(scrim);
     setTimeout(() => input.focus(), 30);
   });
@@ -95,8 +132,8 @@ async function studentAction() {
       location.href = '/';
       return;
     }
-    const label = await askText({ title: 'Buat ruang kelompok', sub: 'Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Jawaban tersimpan di ruang ini.',
-      label: 'Nama kelompok (boleh dikosongkan)', placeholder: 'mis. Kelompok 3', ok: 'Buat ruang' });
+    const label = await askText({ title: 'Buat ruang kelompok', sub: 'Kamu dapat kode untuk teman sekelompok.',
+      label: 'Nama kelompok', placeholder: 'mis. Kelompok 3', ok: 'Buat ruang' });
     if (label === null) return;
     const r = await fetch('/api/rooms/from-sheet?label=' + encodeURIComponent(label.trim()), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) });
     const d = await r.json().catch(() => ({}));
@@ -116,17 +153,25 @@ let snackTimer = 0;
 function snack(msg, action) {
   const el = $('snack');
   el.textContent = '';
+  el.classList.remove('out');
   el.append(msg);
   if (action) {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = action.label;
-    b.onclick = () => { el.hidden = true; action.run(); };
+    b.onclick = () => { hideSnack(); action.run(); };
     el.append(b);
   }
   el.hidden = false;
   clearTimeout(snackTimer);
-  snackTimer = setTimeout(() => { el.hidden = true; }, action ? 8000 : 4000);
+  snackTimer = setTimeout(hideSnack, action ? 8000 : 4000);
+}
+function hideSnack() {
+  const el = $('snack');
+  clearTimeout(snackTimer);
+  if (el.hidden) return;
+  el.classList.add('out');
+  snackTimer = setTimeout(() => { el.hidden = true; el.classList.remove('out'); }, REDUCED.matches ? 0 : 160);
 }
 
 function download(name, data, type) {
@@ -176,7 +221,7 @@ function commit(fn, { rerender = false } = {}) {
   fn();
   if (before) { undo.push(before); if (undo.length > 80) undo.shift(); }
   redo.length = 0;
-  $('undoBtn').disabled = !undo.length;
+  updateHist();
   if (rerender) renderSheet(); else refreshOverlay();
   renderInspector();
   scheduleSave();
@@ -193,8 +238,12 @@ function doRedo() {
   restore(redo.pop());
   afterHistory();
 }
-function afterHistory() {
+function updateHist() {
   $('undoBtn').disabled = !undo.length;
+  $('redoBtn').disabled = !redo.length;
+}
+function afterHistory() {
+  updateHist();
   $('title').value = sheet.title;
   if (selected && !findField(selected)) selected = null;
   renderSheet();
@@ -229,24 +278,23 @@ async function openFile(file) {
 async function importBytes(bytes, name) {
   show('busy');
   $('busyTitle').textContent = 'Membaca ' + name;
-  $('busyNote').textContent = 'Memuat pembaca PDF…';
-  $('busyBar').style.width = '4%';
+  $('busyNote').textContent = '';
+  setBar(0.04);
   try {
     const lib = await loadPdfjs();
-    $('busyNote').textContent = 'Mengenali teks, gambar, dan tempat jawaban…';
     const s = await importPdf(lib, bytes, {
       name,
       docOptions: { standardFontDataUrl: `${PDFJS}/standard_fonts/`, cMapUrl: `${PDFJS}/cmaps/`, cMapPacked: true },
       onProgress(done, total) {
-        $('busyBar').style.width = Math.round(4 + (96 * done) / total) + '%';
+        setBar(0.04 + (0.96 * done) / total);
         $('busyNote').textContent = `Halaman ${done} dari ${total}`;
       },
     });
     const n = s.pages.reduce((k, p) => k + p.fields.length, 0);
     const textless = s.pages.every((p) => !p.text.length);
     openSheet(s, null);
-    if (textless) snack('PDF ini tidak memiliki teks (hasil pindai?). Isian bisa ditambahkan manual.');
-    else snack(`${s.pages.length} halaman, ${n} tempat jawaban ditemukan. Periksa dan rapikan sebelum dibagikan.`);
+    if (textless) snack('PDF hasil pindai: tambahkan isian dengan tombol Isian.');
+    else snack(n ? `${n} isian ditemukan` : 'Belum ada isian. Tambahkan dengan tombol Isian.');
   } catch (e) {
     console.error(e);
     show('start');
@@ -267,7 +315,7 @@ function openSheet(s, key, proj = null) {
   selected = null;
   previewValues = {};
   $('title').value = sheet.title || '';
-  $('undoBtn').disabled = true;
+  updateHist();
   show('editor'); // before rendering: the player measures text, which needs layout
   setMode('design');
   store.put(docKey, sheet, project ? { projectId: project.id } : {});
@@ -285,12 +333,13 @@ function renderSheet() {
   player = null;
   canvas.classList.toggle('design', mode === 'design');
   canvas.classList.toggle('preview', mode === 'preview');
+  canvas.classList.remove('empty');
   if (mode === 'class') {
     const room = classData && classData.rooms.find((r) => r.id === classRoom);
     if (!room) {
       canvas.textContent = '';
-      canvas.append(h('p', { class: 'empty-canvas' }, classData && classData.rooms.length ? 'Pilih ruang di kanan untuk melihat jawaban kelompok itu secara langsung.'
-        : 'Buat ruang untuk tiap kelompok di panel kanan. Siswa bergabung dengan kodenya, tanpa akun.'));
+      canvas.classList.add('empty');
+      canvas.append(h('div', { class: 'empty-canvas' }, icon('class'), classData && classData.rooms.length ? 'Pilih ruang untuk melihat jawabannya.' : 'Belum ada ruang.'));
       updateZoomLabel();
       return;
     }
@@ -309,12 +358,26 @@ function renderSheet() {
   });
   canvas.scrollTop = top;
   window.studio = { player, sheet }; // for the CDP suite and the console
-  if (mode === 'design') { buildOverlay(); wireText(); }
+  if (mode === 'design') { buildOverlay(); buildPageBars(); wireText(); }
   updateZoomLabel();
 }
 
 function updateZoomLabel() {
   $('zoomLabel').textContent = player ? Math.round(player.scale * 100) + '%' : '';
+}
+
+// Page actions sit above their page, outside the scaled page element, so
+// they stay the same size at any zoom.
+function buildPageBars() {
+  const n = sheet.pages.length;
+  player.pages.forEach((pp, pi) => {
+    const pw = pp.element.parentElement;
+    const blank = !sheet.pages[pi].fields.length && !sheet.pages[pi].text.length;
+    const btn = (ic, label, dis, fn) => h('button', { class: 'icon-btn' + (ic === 'trash' ? ' danger' : ''), type: 'button', title: label, 'aria-label': `${label} ${pi + 1}`, disabled: dis, onclick: fn }, icon(ic));
+    pw.append(h('div', { class: 'pg-bar' },
+      h('span', { class: 'pg-name' }, `Halaman ${pi + 1}` + (blank ? ' · kosong' : '')),
+      n > 1 ? [btn('up', 'Naikkan halaman', pi === 0, () => movePage(pi, -1)), btn('down', 'Turunkan halaman', pi === n - 1, () => movePage(pi, 1)), btn('trash', 'Hapus halaman', false, () => deletePage(pi))] : null));
+  });
 }
 
 // One overlay per page, inside the scaled page element, so overlay
@@ -357,9 +420,10 @@ function placeBox(el, f) {
   el.style.top = f.y + 'px';
   el.style.width = f.w + 'px';
   el.style.height = f.h + 'px';
-  el.className = 'st-fb kind-' + f.kind + (f.lineGap ? ' lined' : '') + (f.id === selected ? ' sel' : '');
+  el.className = 'st-fb kind-' + f.kind + (f.lineGap ? ' lined' : '') + (f.label ? '' : ' unnamed') + (f.id === selected ? ' sel' : '') + (f.id === popId && !REDUCED.matches ? ' pop' : '');
+  if (f.id === popId) { popId = null; el.addEventListener('animationend', () => el.classList.remove('pop'), { once: true }); }
   if (f.lineGap) el.style.setProperty('--gap', f.lineGap + 'px'); else el.style.removeProperty('--gap');
-  el.querySelector('.st-chip').textContent = f.label || KIND_LABEL[f.kind];
+  el.querySelector('.st-chip').textContent = f.label || 'Tanpa nama';
   el.querySelectorAll('.st-h').forEach((h) => h.remove());
   if (f.id === selected) {
     for (const h of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
@@ -372,7 +436,10 @@ function placeBox(el, f) {
 }
 
 function select(id, { scroll = false } = {}) {
+  if (id === selected) return;
+  panelFrom = id ? 'from-right' : 'from-left';
   selected = id;
+  if (id && PHONE.matches) setSheetOpen(true);
   refreshOverlay();
   renderInspector();
   if (scroll && id) {
@@ -411,8 +478,11 @@ function onOverlayDown(e, pi, ov) {
       if (w < 6 && h < 6) { w = 160; h = 18; x = x0 + w; y = y0 + h; } // a click drops a default field
       const f = { id: nextFieldId(pg), kind: h >= 26 ? 'textarea' : (Math.abs(w - h) < 3 && w <= 18 ? 'checkbox' : 'text'),
         x: r1(Math.min(x, x0)), y: r1(Math.min(y, y0)), w: r1(Math.max(8, w)), h: r1(Math.max(8, h)), label: '', source: 'manual' };
+      popId = f.id;
+      panelFrom = 'from-right';
       commit(() => { pg.fields.push(f); selected = f.id; });
       setDrawing(false);
+      if (PHONE.matches) setSheetOpen(true);
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
@@ -432,7 +502,7 @@ function onOverlayDown(e, pi, ov) {
     const [x, y] = pt(ev);
     const dx = x - x0, dy = y - y0;
     if (!moved && Math.abs(dx) + Math.abs(dy) < 1.5) return;
-    if (!moved) { moved = true; undo.push(snapshot()); redo.length = 0; $('undoBtn').disabled = false; }
+    if (!moved) { moved = true; undo.push(snapshot()); redo.length = 0; updateHist(); }
     const n = { ...start };
     if (!h) { n.x = start.x + dx; n.y = start.y + dy; }
     else {
@@ -457,14 +527,16 @@ function onOverlayDown(e, pi, ov) {
 function setDrawing(on) {
   drawing = on;
   $('addTool').setAttribute('aria-pressed', String(on));
+  $('editor').classList.toggle('drawing', on);
   $('canvas').classList.toggle('drawing', on);
-  $('tbNote').textContent = on ? 'Seret di halaman untuk menggambar kotak isian. Esc untuk batal.' :
-    'Klik kotak isian untuk menyuntingnya. Klik dua kali teks untuk memperbaiki.';
+  if (on) snack(PHONE.matches ? 'Ketuk atau seret di halaman' : 'Seret di halaman untuk menggambar kotak');
+  else if ($('snack').textContent.startsWith('Ketuk atau seret') || $('snack').textContent.startsWith('Seret di halaman')) hideSnack();
 }
 
 // Double-click a text run to fix a typo or reword it.
 function wireText() {
   $('canvas').querySelectorAll('.esh-t').forEach((el) => {
+    el.title = 'Klik dua kali untuk mengubah';
     el.addEventListener('dblclick', () => {
       if (el.isContentEditable) return;
       const id = el.dataset.id;
@@ -497,126 +569,157 @@ function wireText() {
   });
 }
 
-// ---------------------------------------------------------- inspector
-function h(tag, attrs = {}, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') el.className = v;
-    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, v);
-  }
-  for (const k of kids.flat()) if (k != null) el.append(k.nodeType ? k : String(k));
-  return el;
-}
-
+// ---------------------------------------------------------- panel
+// Design mode shows one thing at a time: the list of fields (what is
+// left to do on top), or the selected field. Preview has no panel at all:
+// the sheet gets the whole width, like a student sees it.
 function renderInspector() {
   const box = $('inspector');
+  const wide = mode === 'preview';
+  $('editor').querySelector('.workspace').classList.toggle('wide', wide);
+  document.body.classList.toggle('panel-off', wide);
   box.textContent = '';
-  if (mode === 'preview') { box.append(previewPanel()); return; }
-  if (mode === 'class') { box.append(classPanel()); return; }
-  const hit = selected && findField(selected);
-  box.append(hit ? fieldPanel(hit.f, hit.pg, hit.pi) : overviewPanel());
+  let el;
+  if (mode === 'class') el = classPanel();
+  else if (mode === 'design') {
+    const hit = selected && findField(selected);
+    el = hit ? fieldPanel(hit.f, hit.pg, hit.pi) : overviewPanel();
+  }
+  if (el) {
+    if (panelFrom) el.classList.add(panelFrom);
+    panelFrom = '';
+    box.append(el);
+  }
+  renderHandle();
 }
+
+function renderHandle() {
+  let t = '';
+  if (mode === 'design' && sheet) {
+    const hit = selected && findField(selected);
+    const fields = allFields();
+    const unnamed = fields.filter((x) => !x.f.label).length;
+    t = hit ? (hit.f.label || 'Isian tanpa nama') : `${fields.length} isian` + (unnamed ? ` · ${unnamed} tanpa nama` : '');
+  } else if (mode === 'class') t = classData ? `${classData.rooms.length} ruang` : 'Ruang kelompok';
+  $('handleText').textContent = t;
+}
+
+function setSheetOpen(on) {
+  $('panel').classList.toggle('open', on);
+  $('sheetHandle').setAttribute('aria-expanded', String(on));
+}
+
+function kindIcon(k) { return svg(KIND_ICON[k] || KIND_ICON.text); }
 
 function overviewPanel() {
   const fields = allFields();
-  const unnamed = fields.filter((x) => !x.f.label).length;
+  const unnamed = fields.filter((x) => !x.f.label);
   const wrap = h('div', { class: 'insp' },
-    h('h2', {}, 'Tempat jawaban'),
-    h('p', { class: 'sub' }, 'Ini yang ditemukan otomatis dari PDF. Klik untuk menyunting, atau gambar kotak baru dengan ', h('b', {}, 'Tambah isian'), '.'),
-    h('div', { class: 'stat' },
-      h('div', {}, h('b', {}, String(sheet.pages.length)), h('span', {}, 'halaman')),
-      h('div', {}, h('b', {}, String(fields.length)), h('span', {}, 'isian')),
-      h('div', {}, h('b', {}, String(unnamed)), h('span', {}, 'tanpa nama'))),
-  );
-  if (unnamed) wrap.append(h('p', { class: 'tip' }, 'Beri nama setiap isian (mis. "Nama", "Jawaban no. 2"). Nama dipakai pembaca layar dan saat guru melihat jawaban.'));
-  const n = sheet.pages.length;
+    h('div', { class: 'p-head' }, h('h2', {}, 'Isian ', h('span', { class: 'count' }, String(fields.length)))));
+  if (!fields.length) {
+    wrap.append(h('div', { class: 'empty' }, 'Belum ada isian.', h('br'),
+      h('button', { class: 'btn tonal', type: 'button', onclick: () => setDrawing(true) }, icon('plus'), 'Tambah isian')));
+    return wrap;
+  }
+  // The one thing left to do, as a button that does it.
+  if (unnamed.length) {
+    wrap.append(h('button', { class: 'todo', type: 'button', onclick: () => { select(unnamed[0].f.id, { scroll: true }); requestAnimationFrame(() => { const n = $('inspector').querySelector('.name-input'); if (n && !PHONE.matches) n.focus(); }); } },
+      h('span', {}, `Beri nama ${unnamed.length} isian`), icon('back')));
+    wrap.lastChild.querySelector('svg').style.transform = 'rotate(180deg)';
+  } else {
+    wrap.append(h('p', { class: 'done-note' }, icon('check'), 'Semua isian sudah bernama'));
+  }
+  const many = sheet.pages.length > 1;
   sheet.pages.forEach((pg, pi) => {
-    const blank = !pg.fields.length && !pg.text.length;
-    wrap.append(h('div', { class: 'pagehead row-between' }, h('span', {}, `Halaman ${pi + 1}` + (blank ? ' (kosong)' : '')),
-      h('span', { class: 'page-acts' },
-        h('button', { type: 'button', title: 'Naikkan halaman', 'aria-label': `Naikkan halaman ${pi + 1}`, disabled: pi === 0, onclick: () => movePage(pi, -1) }, '↑'),
-        h('button', { type: 'button', title: 'Turunkan halaman', 'aria-label': `Turunkan halaman ${pi + 1}`, disabled: pi === n - 1, onclick: () => movePage(pi, 1) }, '↓'),
-        h('button', { type: 'button', title: 'Hapus halaman', 'aria-label': `Hapus halaman ${pi + 1}`, disabled: n === 1, onclick: () => deletePage(pi) }, '✕'))));
     if (!pg.fields.length) return;
-    wrap.append(h('ul', { class: 'flist' }, pg.fields.map((f) => h('li', {}, h('button', { type: 'button', onclick: () => select(f.id, { scroll: true }) },
-      h('span', { class: 'fl-k', 'aria-hidden': 'true' }, KIND_LETTER[f.kind] || '?'),
-      h('span', { class: 'fl-l' + (f.label ? '' : ' fl-empty') }, f.label || 'Belum diberi nama'),
-      h('span', { class: 'fl-p' }, KIND_LABEL[f.kind]))))));
+    if (many) wrap.append(h('p', { class: 'group' }, `HALAMAN ${pi + 1}`));
+    wrap.append(h('ul', { class: 'flist' }, pg.fields.map((f) => h('li', {}, h('button', {
+      type: 'button',
+      onclick: () => select(f.id, { scroll: true }),
+      onpointerenter: () => hot(f.id, true), onpointerleave: () => hot(f.id, false),
+      onfocus: () => hot(f.id, true), onblur: () => hot(f.id, false),
+    },
+    h('span', { class: 'fl-k', title: KIND_LABEL[f.kind] }, kindIcon(f.kind)),
+    h('span', { class: 'fl-l' + (f.label ? '' : ' fl-empty') }, f.label || 'Tanpa nama'),
+    f.label ? null : h('span', { class: 'fl-dot', 'aria-label': 'belum bernama' }))))));
   });
-  if (!fields.length) wrap.append(h('p', { class: 'tip' }, 'Belum ada isian. Pilih Tambah isian lalu seret di halaman.'));
   return wrap;
+}
+
+// Hovering a row in the list lights up its box on the page.
+function hot(id, on) {
+  const el = $('canvas').querySelector(`.st-fb[data-id="${CSS.escape(id)}"]`);
+  if (el) el.classList.toggle('hot', on);
 }
 
 function fieldPanel(f, pg, pi) {
   const edit = (fn, opts) => commit(fn, opts);
   const num = (label, key) => h('label', { class: 'fld' }, h('span', {}, label),
-    h('input', { type: 'number', step: '0.5', value: f[key], onchange: (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) edit(() => { f[key] = v; }); } }));
-  const idErr = h('small', {}, 'Kunci penyimpanan jawaban. Biarkan kecuali Anda tahu alasannya.');
+    h('input', { type: 'number', step: '0.5', inputmode: 'decimal', value: f[key], onchange: (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) edit(() => { f[key] = v; }); } }));
+  const idErr = h('small', {}, 'Dipakai untuk menyimpan jawaban.');
   const idFld = h('label', { class: 'fld' }, h('span', {}, 'Kunci'),
-    h('input', { type: 'text', value: f.id, spellcheck: 'false', onchange: (e) => {
+    h('input', { type: 'text', value: f.id, spellcheck: 'false', autocapitalize: 'none', onchange: (e) => {
       const v = e.target.value.trim();
       const ok = /^[A-Za-z0-9_-]{1,60}$/.test(v) && !allFields().some((x) => x.f.id === v && x.f !== f);
       idFld.classList.toggle('err', !ok);
-      idErr.textContent = ok ? 'Kunci penyimpanan jawaban.' : 'Huruf, angka, - dan _ saja, dan harus unik.';
+      idErr.textContent = ok ? 'Dipakai untuk menyimpan jawaban.' : 'Huruf, angka, - dan _ saja, dan harus unik.';
       if (ok && v !== f.id) edit(() => { f.id = v; selected = v; });
     } }), idErr);
 
-  const kinds = h('div', { class: 'kinds', role: 'group', 'aria-label': 'Jenis isian' }, Object.keys(KIND_LABEL).map((k) => {
-    const b = h('button', { type: 'button', 'aria-pressed': String(f.kind === k), onclick: () => edit(() => {
+  const kinds = h('div', { class: 'kinds', role: 'group', 'aria-label': 'Jenis isian' }, Object.keys(KIND_LABEL).map((k) =>
+    h('button', { type: 'button', 'aria-pressed': String(f.kind === k), onclick: () => { if (f.kind !== k) edit(() => {
       f.kind = k;
       if (k !== 'textarea') { delete f.lineGap; delete f.lines; }
       if (k === 'checkbox') { const s = Math.min(f.w, f.h, 14); f.w = f.h = s; }
-    }) });
-    b.innerHTML = KIND_ICON[k];
-    b.append(KIND_LABEL[k]);
-    return b;
-  }));
+    }); } }, kindIcon(k), KIND_LABEL[k])));
 
-  const wrap = h('div', { class: 'insp' },
-    h('h2', {}, f.label || 'Isian tanpa nama'),
-    h('p', { class: 'sub' }, `Halaman ${pi + 1} · ${f.source === 'manual' ? 'ditambahkan manual' : 'ditemukan otomatis (' + ({ leader: 'titik-titik', line: 'garis', lines: 'garis tulis', table: 'tabel', box: 'kotak', checkbox: 'kotak centang', acroform: 'formulir PDF', space: 'ruang kosong di bawah soal' }[f.source] || f.source) + ')'}`),
-    h('label', { class: 'fld' }, h('span', {}, 'Nama isian'),
-      h('input', { type: 'text', value: f.label || '', placeholder: 'mis. Jawaban no. 1', onchange: (e) => edit(() => { f.label = e.target.value.trim(); }) })),
-    kinds,
-    h('label', { class: 'fld' }, h('span', {}, 'Pertanyaan'),
-      h('textarea', { rows: '2', placeholder: 'Pertanyaan yang dijawab di isian ini', onchange: (e) => edit(() => { const v = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 600); if (v) f.prompt = v; else delete f.prompt; }) }, f.prompt || ''),
-      h('small', {}, 'Ditampilkan bersama isian saat siswa menjawab di HP.')),
-  );
+  const name = h('input', { class: 'name-input', type: 'text', value: f.label || '', placeholder: 'Beri nama, mis. Jawaban no. 1', 'aria-label': 'Nama isian', maxlength: '200',
+    onchange: (e) => edit(() => { f.label = e.target.value.trim(); }),
+    // Enter names it and moves on to the next unnamed field, so naming a
+    // whole sheet is: type, Enter, type, Enter.
+    onkeydown: (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const v = e.target.value.trim();
+      if (v !== (f.label || '')) edit(() => { f.label = v; });
+      if (!v) return;
+      const order = allFields().map((x) => x.f);
+      const i = order.indexOf(f);
+      const next = [...order.slice(i + 1), ...order.slice(0, i)].find((q) => !q.label);
+      select(next ? next.id : null, { scroll: !!next });
+      if (next) requestAnimationFrame(() => { const n = $('inspector').querySelector('.name-input'); if (n) n.focus(); });
+    } });
+
+  const more = h('details', { class: 'more' }, h('summary', {}, 'Lainnya', icon('down')), h('div', {}));
+  const body = more.lastChild;
   if (f.kind !== 'checkbox') {
-    wrap.append(h('label', { class: 'fld' }, h('span', {}, 'Teks bantuan (placeholder)'),
+    body.append(h('label', { class: 'fld' }, h('span', {}, 'Teks bantuan'),
       h('input', { type: 'text', value: f.placeholder || '', placeholder: 'mis. Tulis jawabanmu…', onchange: (e) => edit(() => { const v = e.target.value.trim(); if (v) f.placeholder = v; else delete f.placeholder; }) })));
   }
   if (f.kind === 'textarea') {
-    wrap.append(
+    body.append(
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: f.grow !== false, onchange: (e) => edit(() => { if (e.target.checked) delete f.grow; else f.grow = false; }) }),
-        h('span', {}, 'Memanjang mengikuti jawaban', h('small', {}, 'Halaman ikut memanjang dan isi di bawahnya bergeser, jadi jawaban panjang tidak terpotong.'))),
-      h('label', { class: 'fld' }, h('span', {}, 'Jarak garis tulis (pt)'),
-        h('input', { type: 'number', min: '0', step: '0.5', value: f.lineGap || 0, onchange: (e) => edit(() => { const v = parseFloat(e.target.value); if (v > 4) f.lineGap = v; else { delete f.lineGap; delete f.lines; } }) }),
-        h('small', {}, '0 = kotak biasa. Isi dengan jarak antargaris kalau jawaban ditulis di atas garis.')));
+        h('span', {}, 'Memanjang mengikuti jawaban')),
+      h('label', { class: 'fld' }, h('span', {}, 'Jarak garis tulis (pt), 0 = kotak'),
+        h('input', { type: 'number', min: '0', step: '0.5', inputmode: 'decimal', value: f.lineGap || 0, onchange: (e) => edit(() => { const v = parseFloat(e.target.value); if (v > 4) f.lineGap = v; else { delete f.lineGap; delete f.lines; } }) })));
   }
-  wrap.append(
-    h('span', { class: 'pagehead', style: 'margin-left:2px' }, 'Posisi & ukuran (pt)'),
-    h('div', { class: 'grid4' }, num('X', 'x'), num('Y', 'y'), num('Lebar', 'w'), num('Tinggi', 'h')),
+  body.append(
+    h('div', { class: 'fld' }, h('span', {}, 'Posisi & ukuran (pt)'), h('div', { class: 'grid4' }, num('X', 'x'), num('Y', 'y'), num('Lebar', 'w'), num('Tinggi', 'h'))),
     idFld,
-    h('div', { class: 'row' },
-      h('button', { class: 'btn tonal', type: 'button', onclick: () => duplicate(f, pg) }, 'Duplikat'),
-      h('button', { class: 'btn danger', type: 'button', onclick: () => remove(f.id) }, 'Hapus isian')),
-  );
-  return wrap;
-}
+    h('p', { class: 'where' }, f.source === 'manual' ? 'Ditambahkan manual' : 'Ditemukan dari ' + (SOURCE[f.source] || f.source)));
 
-function previewPanel() {
-  const filled = Object.values(previewValues).filter((v) => v !== '' && v != null).length;
   return h('div', { class: 'insp' },
-    h('h2', {}, 'Coba isi'),
-    h('p', { class: 'sub' }, 'Begini tampilan lembar untuk siswa. Ketik jawaban panjang untuk melihat kotak memanjang dan isi halaman bergeser.'),
-    h('div', { class: 'stat' }, h('div', {}, h('b', {}, String(filled)), h('span', {}, 'isian terisi'))),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn tonal', type: 'button', onclick: () => { previewValues = {}; player.clear(); renderInspector(); } }, 'Kosongkan'),
-      h('button', { class: 'btn text', type: 'button', onclick: () => window.print() }, 'Cetak')),
-  );
+    h('div', { class: 'p-head' },
+      h('button', { class: 'back', type: 'button', onclick: () => select(null) }, icon('back'), 'Semua isian'),
+      h('span', { class: 'appbar-spacer' }),
+      h('button', { class: 'icon-btn', type: 'button', title: 'Duplikat (Ctrl+D)', 'aria-label': 'Duplikat isian', onclick: () => duplicate(f, pg) }, icon('copy')),
+      h('button', { class: 'icon-btn danger', type: 'button', title: 'Hapus (Delete)', 'aria-label': 'Hapus isian', onclick: () => remove(f.id) }, icon('trash'))),
+    name,
+    h('p', { class: 'where' }, `Halaman ${pi + 1}`),
+    kinds,
+    h('label', { class: 'fld' }, h('span', {}, 'Pertanyaan'),
+      h('textarea', { rows: '2', placeholder: 'Ditampilkan saat siswa mengisi di HP', onchange: (e) => edit(() => { const v = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 600); if (v) f.prompt = v; else delete f.prompt; }) }, f.prompt || '')),
+    more);
 }
 
 function movePage(i, d) {
@@ -625,26 +728,27 @@ function movePage(i, d) {
 function deletePage(i) {
   const pg = sheet.pages[i];
   commit(() => { sheet.pages.splice(i, 1); if (selected && pg.fields.some((f) => f.id === selected)) selected = null; }, { rerender: true });
-  snack(`Halaman ${i + 1} dihapus.`, { label: 'Urungkan', run: doUndo });
+  snack(`Halaman ${i + 1} dihapus`, { label: 'Urungkan', run: doUndo });
 }
 
 function duplicate(f, pg) {
   const c = { ...f, id: nextFieldId(pg), y: r1(Math.min(pg.height - f.h, f.y + f.h + 6)), source: 'manual' };
+  popId = c.id;
   commit(() => { pg.fields.push(c); selected = c.id; });
 }
 function remove(id) {
+  panelFrom = 'from-left';
   commit(() => { sheet.pages.forEach((p) => { p.fields = p.fields.filter((q) => q.id !== id); }); selected = null; });
-  snack('Isian dihapus.', { label: 'Urungkan', run: doUndo });
+  snack('Isian dihapus', { label: 'Urungkan', run: doUndo });
 }
 
 // ------------------------------------------------------- publish + class
 function updatePublishItem() {
-  $('publishItem').hidden = !cloud.available;
+  $('publishItem').hidden = !cloud.available || STUDENT;
   $('publishLabel').textContent = project ? 'Terbitkan perubahan' : 'Terbitkan untuk kelas';
-  $('publishNote').textContent = project
-    ? 'Semua ruang kelompok langsung memakai versi baru. Jawaban tetap tersimpan.'
-    : 'Simpan ke akun Anda, lalu buat ruang untuk tiap kelompok.';
+  $('publishNote').textContent = project ? 'Ruang kelompok memakai versi baru' : 'Buat ruang untuk tiap kelompok';
   $('classTab').hidden = $('editor').hidden || !project;
+  placeSegInd(false);
 }
 
 async function publish() {
@@ -652,14 +756,14 @@ async function publish() {
   try {
     if (project) {
       const r = await projects.publish(project.id, sheet);
-      snack(`Versi ${r.version} diterbitkan. Ruang kelompok memakai versi ini saat dibuka ulang.`);
+      snack(`Versi ${r.version} diterbitkan`);
     } else {
       const r = await projects.create(sheet);
       project = { id: r.id, role: 'owner' };
       scheduleSave();
       updatePublishItem();
       refreshMe();
-      snack('Lembar diterbitkan ke akun Anda.', { label: 'Buat ruang', run: () => setMode('class') });
+      snack('Diterbitkan', { label: 'Buat ruang', run: () => setMode('class') });
     }
   } catch (e) {
     snack('Gagal menerbitkan: ' + e.message);
@@ -670,7 +774,7 @@ async function openProject(id, role) {
   show('busy');
   $('busyTitle').textContent = 'Membuka proyek…';
   $('busyNote').textContent = '';
-  $('busyBar').style.width = '60%';
+  setBar(0.6);
   try {
     const { sheet: s } = await projects.sheet(id);
     openSheet(s, 'prj-' + id, { id, role });
@@ -708,7 +812,7 @@ const emptyValues = () => Object.fromEntries(allFields().map((x) => [x.f.id, '']
 function startClassPolling() {
   stopClassPolling();
   classTick();
-  classTimer = setInterval(classTick, 4000);
+  classTimer = setInterval(() => { if (!document.hidden) classTick(); }, 4000);
 }
 function stopClassPolling() { clearInterval(classTimer); classTimer = 0; }
 
@@ -716,41 +820,38 @@ function classPanel() {
   const total = allFields().length;
   const rooms = (classData && classData.rooms) || [];
   const canEdit = project && project.role !== 'viewer';
-  const wrap = h('div', { class: 'insp' },
-    h('h2', {}, 'Ruang kelompok'),
-    h('p', { class: 'sub' }, 'Satu ruang untuk tiap kelompok. Bagikan kode atau tautannya; anggota kelompok mengisi lembar yang sama secara langsung, tanpa akun.'));
-  if (!classData) { wrap.append(h('p', { class: 'sub' }, 'Memuat…')); return wrap; }
+  const wrap = h('div', { class: 'insp' }, h('div', { class: 'p-head' }, h('h2', {}, 'Ruang ', h('span', { class: 'count' }, classData ? String(rooms.length) : ''))));
+  if (!classData) { wrap.append(h('p', { class: 'p-sub' }, 'Memuat…')); return wrap; }
   if (canEdit) {
-    const input = h('input', { type: 'text', placeholder: `Kelompok ${rooms.length + 1}`, maxlength: '60' });
-    wrap.append(h('form', { class: 'row', style: 'margin:0 0 16px', onsubmit: async (e) => {
+    const input = h('input', { type: 'text', placeholder: `Kelompok ${rooms.length + 1}`, maxlength: '60', 'aria-label': 'Nama ruang baru' });
+    wrap.append(h('form', { class: 'room-new', onsubmit: async (e) => {
       e.preventDefault();
       try {
         const r = await projects.addRoom(project.id, input.value.trim() || `Kelompok ${rooms.length + 1}`);
         classRoom = r.room.id;
         await classTick();
-        snack(`Ruang dibuat. Kode: ${r.room.code}`);
+        snack(`Ruang dibuat · kode ${r.room.code}`);
       } catch (err) { snack(err.message); }
-    } }, h('label', { class: 'fld', style: 'flex:1;margin:0' }, input), h('button', { class: 'btn filled', type: 'submit' }, 'Buat ruang')));
+    } }, h('label', { class: 'fld' }, input), h('button', { class: 'btn filled', type: 'submit' }, 'Buat')));
+    if (!rooms.length) wrap.append(h('p', { class: 'p-sub' }, 'Satu ruang untuk tiap kelompok. Siswa masuk dengan kodenya, tanpa akun.'));
   }
   for (const r of rooms) {
     const filled = Object.values(r.answers || {}).filter((v) => v !== '' && v != null).length;
-    const pct = total ? Math.round((100 * filled) / total) : 0;
+    const pct = total ? filled / total : 0;
     const link = `${location.origin}/j/${r.code}`;
-    wrap.append(h('div', { class: 'room-card' + (r.id === classRoom ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button')) return; classRoom = r.id; renderSheet(); renderInspector(); } },
+    const sel = r.id === classRoom;
+    wrap.append(h('div', { class: 'room-card' + (sel ? ' sel' : ''), onclick: (e) => { if (e.target.closest('button')) return; classRoom = r.id; renderSheet(); renderInspector(); } },
       h('div', { class: 'rc-top' }, h('span', { class: 'rc-label' }, r.label), r.code ? h('code', {}, r.code) : null),
       h('div', { class: 'rc-meta' },
-        h('span', { class: 'live' + (r.peers.length ? '' : ' off') }, r.peers.length ? `${r.peers.length} online: ${r.peers.map((p) => p.name).join(', ')}` : 'tidak ada yang online'),
-        h('span', {}, r.error ? 'jawaban gagal dimuat' : `${filled}/${total} isian`)),
-      h('div', { class: 'progress' }, h('i', { style: `width:${pct}%` })),
-      r.id === classRoom ? h('div', { class: 'row', style: 'margin-top:10px' },
-        r.code ? h('button', { class: 'btn tonal', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(link); snack('Tautan disalin: ' + link); } catch { snack(link); } } }, 'Salin tautan') : null,
+        h('span', { class: 'live' + (r.peers.length ? '' : ' off') }, r.peers.length ? r.peers.map((p) => p.name).join(', ') : 'offline'),
+        h('span', {}, r.error ? 'gagal dimuat' : `${filled}/${total}`)),
+      h('div', { class: 'progress' }, h('i', { style: `transform:scaleX(${pct})` })),
+      sel ? h('div', { class: 'row rc-acts' },
+        r.code ? h('button', { class: 'btn tonal', type: 'button', onclick: async () => { try { await navigator.clipboard.writeText(link); snack('Tautan disalin'); } catch { snack(link); } } }, 'Salin tautan') : null,
         canEdit ? h('button', { class: 'btn text', type: 'button', onclick: async () => { if (!confirm(`Kosongkan semua jawaban ${r.label}?`)) return; await projects.resetRoom(project.id, r.id); classTick(); } }, 'Kosongkan') : null,
         canEdit ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (!confirm(`Hapus ${r.label}? Kode ${r.code} tidak bisa dipakai lagi dan jawabannya hilang.`)) return; await projects.removeRoom(project.id, r.id); classRoom = null; classTick(); } }, 'Hapus') : null) : null));
   }
-  if (rooms.length) {
-    wrap.append(h('div', { class: 'row', style: 'margin:8px 0 20px' },
-      h('button', { class: 'btn text', type: 'button', onclick: () => exportCsv(rooms) }, 'Unduh semua jawaban (.csv)')));
-  }
+  if (rooms.length) wrap.append(h('div', { class: 'row', style: 'margin:8px 0 20px' }, h('button', { class: 'btn text', type: 'button', onclick: () => exportCsv(rooms) }, 'Unduh jawaban (.csv)')));
   if (project.role === 'owner') wrap.append(sharePanel());
   return wrap;
 }
@@ -763,13 +864,15 @@ function exportCsv(rooms) {
   const rows = [['Ruang', 'Kode', ...fields.map((f) => f.label || f.id)].map(q).join(',')];
   for (const r of rooms) rows.push([r.label, r.code, ...fields.map((f) => (f.kind === 'checkbox' ? (r.answers[f.id] ? 'ya' : '') : r.answers[f.id]))].map(q).join(','));
   // BOM so Excel opens UTF-8 (Indonesian text) correctly
-  download(slug(sheet.title) + '-jawaban.csv', '\ufeff' + rows.join('\r\n'), 'text/csv;charset=utf-8');
+  download(slug(sheet.title) + '-jawaban.csv', '﻿' + rows.join('\r\n'), 'text/csv;charset=utf-8');
 }
 
 function sharePanel() {
-  const box = h('div', {}, h('span', { class: 'pagehead', style: 'margin-left:2px' }, 'Akses guru lain'));
+  const box = h('details', { class: 'more' }, h('summary', {}, 'Guru lain', icon('down')));
+  const inner = h('div', {});
+  box.append(inner);
   const list = h('div', {});
-  box.append(list);
+  inner.append(list);
   const fill = async () => {
     list.textContent = '';
     const { project: info } = await projects.info(project.id);
@@ -780,33 +883,49 @@ function sharePanel() {
       list.append(h('div', { class: 'member' }, h('b', {}, '@' + m.username), sel));
     }
   };
-  fill().catch(() => {});
-  const user = h('input', { type: 'text', placeholder: 'nama pengguna', spellcheck: 'false', autocapitalize: 'none' });
-  const role = h('select', {}, h('option', { value: 'editor' }, 'Penyunting'), h('option', { value: 'viewer' }, 'Pemeriksa'));
-  box.append(h('form', { class: 'row', style: 'margin-top:8px', onsubmit: async (e) => {
+  box.addEventListener('toggle', () => { if (box.open && !list.childElementCount) fill().catch(() => {}); });
+  const user = h('input', { type: 'text', placeholder: 'nama pengguna', spellcheck: 'false', autocapitalize: 'none', 'aria-label': 'Nama pengguna guru' });
+  const role = h('select', { 'aria-label': 'Peran' }, h('option', { value: 'editor' }, 'Penyunting'), h('option', { value: 'viewer' }, 'Pemeriksa'));
+  inner.append(h('form', { class: 'row', style: 'margin-top:8px', onsubmit: async (e) => {
     e.preventDefault();
-    try { await projects.share(project.id, user.value.trim(), role.value); user.value = ''; fill(); snack('Akses diberikan.'); } catch (err) { snack(err.message); }
-  } }, h('label', { class: 'fld', style: 'flex:1;margin:0' }, user), h('label', { class: 'fld', style: 'margin:0' }, role), h('button', { class: 'btn tonal', type: 'submit' }, 'Bagikan')));
-  box.append(h('p', { class: 'sub', style: 'margin-top:8px' }, 'Penyunting bisa mengubah lembar dan membuat ruang. Pemeriksa hanya melihat jawaban.'));
+    try { await projects.share(project.id, user.value.trim(), role.value); user.value = ''; fill(); snack('Akses diberikan'); } catch (err) { snack(err.message); }
+  } }, h('label', { class: 'fld', style: 'flex:1;margin:0' }, user), h('label', { class: 'fld', style: 'margin:0' }, role), h('button', { class: 'btn tonal', type: 'submit' }, 'Tambah')));
+  inner.append(h('p', { class: 'where', style: 'margin-top:10px' }, 'Penyunting: ubah lembar dan ruang. Pemeriksa: lihat jawaban.'));
   return box;
 }
 
-async function renderCloudStart() {
-  const box = $('cloudBox');
-  box.hidden = !cloud.available;
-  if (!cloud.available) return;
-  const list = $('projectList');
-  list.textContent = '';
-  $('loginBtn').hidden = !!cloud.user;
-  if (!cloud.user) { $('cloudNote').textContent = 'Masuk untuk menerbitkan lembar ke kelas: siswa bergabung dengan kode dan mengisi bersama.'; return; }
-  $('cloudNote').textContent = cloud.projects.length ? '' : 'Belum ada proyek. Impor PDF, lalu pilih Simpan & bagikan → Terbitkan untuk kelas.';
-  const ROLE = { owner: 'pemilik', editor: 'penyunting', viewer: 'pemeriksa' };
-  for (const p of cloud.projects) {
-    list.append(h('li', {}, h('button', { type: 'button', onclick: () => openProject(p.id, p.role) },
-      h('span', { class: 'r-title' }, p.title || 'Tanpa judul'),
-      h('span', { class: 'r-role' }, ROLE[p.role] || p.role),
-      h('span', { class: 'r-meta' }, new Date(p.updated).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })))));
+// ------------------------------------------------------------ home
+// One list: published projects first (they live on the server), then
+// sheets in this browser that aren't one of those projects.
+async function renderHome() {
+  const list = $('recentList');
+  const local = await store.list();
+  const items = [];
+  const ROLE = { editor: 'penyunting', viewer: 'pemeriksa' };
+  const when = (t) => new Date(t).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+  if (cloud.user && !GROUP) {
+    for (const p of cloud.projects) items.push({ cloud: true, title: p.title, meta: 'Diterbitkan · ' + when(p.updated), role: ROLE[p.role], open: () => openProject(p.id, p.role) });
   }
+  const published = new Set(cloud.user ? cloud.projects.map((p) => p.id) : []);
+  for (const r of local.slice(0, 8)) {
+    if (r.projectId && published.has(r.projectId)) continue;
+    if (r.key === 'room-edit') continue;
+    items.push({ title: r.title, meta: `${r.pages} hlm · ${when(r.updated)}`, open: async () => { const rec = await store.get(r.key); if (rec) openSheet(rec.sheet, r.key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); } });
+  }
+  list.textContent = '';
+  items.forEach((it, i) => list.append(h('li', { style: `--i:${Math.min(i, 8)}` }, h('button', { type: 'button', onclick: it.open },
+    h('span', { class: 'r-ic' + (it.cloud ? ' cloud' : '') }, icon(it.cloud ? 'class' : 'file')),
+    h('span', { class: 'r-main' }, h('span', { class: 'r-title' }, it.title || 'Tanpa judul'), h('span', { class: 'r-meta' }, it.meta)),
+    it.role ? h('span', { class: 'r-role' }, it.role) : null))));
+  $('recent').hidden = !items.length;
+}
+
+function goHome() {
+  history.replaceState(null, '', location.pathname + location.search);
+  sheet = null;
+  if (player) { player.destroy(); player = null; }
+  show('start');
+  renderHome();
 }
 
 // --------------------------------------------------------------- mode
@@ -814,75 +933,108 @@ function setMode(m) {
   mode = m;
   if (m === 'class') startClassPolling(); else stopClassPolling();
   for (const b of $('modeSeg').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.mode === m));
-  $('toolbar').querySelector('#addTool').hidden = m !== 'design';
-  $('tbNote').hidden = m === 'class';
+  placeSegInd(true);
+  $('addTool').hidden = m !== 'design';
+  $('clearBtn').hidden = $('printBtn').hidden = m !== 'preview';
   setDrawing(false);
+  if (m !== 'design' || !selected) setSheetOpen(false);
   if (sheet) { renderSheet(); renderInspector(); }
 }
 
-// --------------------------------------------------------------- wire up
-async function showRecent() {
-  const list = await store.list();
-  $('recent').hidden = !list.length;
-  $('recentList').textContent = '';
-  for (const r of list.slice(0, 8)) {
-    $('recentList').append(h('li', {}, h('button', { type: 'button', onclick: async () => { const rec = await store.get(r.key); if (rec) openSheet(rec.sheet, r.key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); } },
-      h('span', { class: 'r-title' }, r.title || 'Tanpa judul'),
-      h('span', { class: 'r-meta' }, `${r.pages} hlm · ${new Date(r.updated).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}`))));
+// The selected segment's pill slides to its new place on the gate's fast
+// spring, with the same squash the gate's tab indicator has.
+let segAt = null;
+function placeSegInd(animate) {
+  const seg = $('modeSeg');
+  const ind = $('segInd');
+  const b = seg.querySelector('button[aria-checked=true]');
+  if (!b || seg.hidden || !b.offsetWidth) return;
+  const to = { x: b.offsetLeft, w: b.offsetWidth, h: b.offsetHeight, t: b.offsetTop };
+  ind.style.cssText = `width:${to.w}px;height:${to.h}px;top:${to.t}px;transform:translateX(${to.x}px)`;
+  seg.classList.add('ready');
+  if (animate && segAt && segAt.x !== to.x && ind.animate && !REDUCED.matches) {
+    ind.getAnimations().forEach((a) => a.cancel());
+    const sx = segAt.w / to.w;
+    ind.animate([
+      { transform: `translateX(${segAt.x}px) scaleX(${sx})`, transformOrigin: '0 0' },
+      { transform: `translateX(${(segAt.x + to.x) / 2}px) scaleX(${(1 + sx) / 2 * 1.08}) scaleY(.92)`, transformOrigin: '0 0', offset: 0.45 },
+      { transform: `translateX(${to.x}px)`, transformOrigin: '0 0' },
+    ], { duration: 350, easing: 'cubic-bezier(.42,1.67,.21,.90)' });
   }
+  segAt = to;
 }
 
+function setBar(f) { $('busyBar').style.transform = `scaleX(${Math.max(0, Math.min(1, f))})`; }
+
+// --------------------------------------------------------------- wire up
 function init() {
-  const drop = $('drop');
   const input = $('pdfInput');
-  drop.addEventListener('click', () => input.click());
-  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  $('pickBtn').addEventListener('click', () => input.click());
   input.addEventListener('change', () => { openFile(input.files[0]); input.value = ''; });
-  $('openJsonBtn').addEventListener('click', () => input.click());
   $('sampleBtn').addEventListener('click', async () => {
     const res = await fetch(new URL('samples/ekosistem-kolam.pdf', import.meta.url));
     if (!res.ok) { snack('Contoh tidak tersedia.'); return; }
     importBytes(new Uint8Array(await res.arrayBuffer()), 'ekosistem-kolam.pdf');
   });
-  // Drop anywhere on the start screen
-  for (const ev of ['dragenter', 'dragover']) addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); });
-  for (const ev of ['dragleave', 'drop']) addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || !e.relatedTarget) drop.classList.remove('over'); });
-  addEventListener('drop', (e) => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) openFile(f); });
+  // Drop anywhere while the start screen is up.
+  const start = $('start');
+  let depth = 0;
+  addEventListener('dragenter', (e) => { e.preventDefault(); if (start.hidden) return; depth++; start.classList.add('over'); });
+  addEventListener('dragover', (e) => e.preventDefault());
+  addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; start.classList.remove('over'); } });
+  addEventListener('drop', (e) => {
+    e.preventDefault();
+    depth = 0;
+    start.classList.remove('over');
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f && !start.hidden) openFile(f);
+  });
 
+  $('homeBtn').addEventListener('click', goHome);
+  $('brand').addEventListener('click', (e) => { if (!$('start').hidden) return; e.preventDefault(); goHome(); });
   $('title').addEventListener('change', (e) => commit(() => { sheet.title = e.target.value.trim() || sheet.title; }));
+  $('title').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.target.blur(); });
   $('modeSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b.dataset.mode !== mode) setMode(b.dataset.mode); });
+  addEventListener('resize', () => placeSegInd(false));
+  if (document.fonts) document.fonts.ready.then(() => placeSegInd(false));
   $('undoBtn').addEventListener('click', doUndo);
+  $('redoBtn').addEventListener('click', doRedo);
   $('addTool').addEventListener('click', () => setDrawing(!drawing));
+  $('clearBtn').addEventListener('click', () => { previewValues = {}; player.clear(); });
+  $('printBtn').addEventListener('click', () => window.print());
   const zoomBy = (d) => { const cur = player ? player.scale : 1; zoom = Math.max(0.4, Math.min(3, Math.round((cur + d) * 10) / 10)); player.setScale(zoom); updateZoomLabel(); };
   $('zoomIn').addEventListener('click', () => zoomBy(0.1));
   $('zoomOut').addEventListener('click', () => zoomBy(-0.1));
+  $('zoomLabel').addEventListener('click', () => { zoom = null; if (player) player.setScale(null); updateZoomLabel(); });
+  $('sheetHandle').addEventListener('click', () => setSheetOpen(!$('panel').classList.contains('open')));
 
-  $('loginBtn').addEventListener('click', async () => { if (await authDialog('login')) renderCloudStart(); });
+  $('loginBtn').addEventListener('click', async () => { if (await authDialog('login')) { renderLogin(); renderHome(); updatePublishItem(); } });
   const amenu = $('accountMenu');
   $('accountBtn').addEventListener('click', (e) => { e.stopPropagation(); amenu.hidden = !amenu.hidden; });
   addEventListener('click', (e) => { if (!amenu.hidden && !amenu.contains(e.target)) amenu.hidden = true; });
-  $('logoutBtn').addEventListener('click', async () => { amenu.hidden = true; await logout(); updatePublishItem(); renderCloudStart(); snack('Anda telah keluar.'); });
+  $('logoutBtn').addEventListener('click', async () => { amenu.hidden = true; await logout(); updatePublishItem(); renderLogin(); renderHome(); snack('Anda telah keluar'); });
 
   const menu = $('exportMenu');
+  const setMenu = (open) => { menu.hidden = !open; $('exportBtn').setAttribute('aria-expanded', String(open)); };
   $('exportBtn').addEventListener('click', (e) => {
     e.stopPropagation();
     if (STUDENT) { studentAction(); return; }
-    menu.hidden = !menu.hidden;
-    if (!menu.hidden) menu.querySelector('button').focus();
+    setMenu(menu.hidden);
+    if (!menu.hidden) menu.querySelector('button:not([hidden])').focus();
   });
-  addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true; });
+  addEventListener('click', (e) => { if (!menu.hidden && !menu.contains(e.target)) setMenu(false); });
+  menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setMenu(false); $('exportBtn').focus(); } });
   menu.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    menu.hidden = true;
+    setMenu(false);
     const name = slug(sheet.title);
     if (b.dataset.export === 'json') download(name + '.elkpd.json', JSON.stringify(sheet), 'application/json');
     if (b.dataset.export === 'html') {
       const missing = allFields().filter((x) => !x.f.label).length;
       download(name + '.html', await buildStandaloneHtml(sheet), 'text/html');
-      snack(missing ? `Tersimpan. ${missing} isian belum diberi nama.` : 'Tersimpan. Bagikan berkas .html ini ke siswa.');
+      snack(missing ? `Tersimpan · ${missing} isian belum bernama` : 'Tersimpan');
     }
-    if (b.dataset.export === 'new') { history.replaceState(null, '', location.pathname); show('start'); showRecent(); renderCloudStart(); }
     if (b.dataset.export === 'publish') publish();
   });
 
@@ -892,9 +1044,9 @@ function init() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z') { if (typing) return; e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { if (typing) return; e.preventDefault(); doRedo(); return; }
-    if (typing || mode !== 'design') return;
+    if (typing || mode !== 'design' || e.target.closest('.scrim')) return;
     if (e.key === 'Escape') { if (drawing) setDrawing(false); else select(null); return; }
-    if (e.key === 'a' || e.key === 'A') { setDrawing(!drawing); return; }
+    if ((e.key === 'a' || e.key === 'A') && !mod) { setDrawing(!drawing); return; }
     const hit = selected && findField(selected);
     if (!hit) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); remove(hit.f.id); return; }
@@ -905,14 +1057,14 @@ function init() {
   });
 
   if (GROUP) {
-    document.querySelector('.drop h1').textContent = 'Buat ruang kelompok dari PDF guru';
-    document.querySelector('.drop p').textContent = 'Seret PDF lembar kerja ke sini, atau pilih berkas. Kamu akan dapat kode untuk dibagikan ke teman sekelompok. Tidak perlu akun.';
-    $('openJsonBtn').hidden = true;
-    document.querySelector('.start-row .dot').hidden = true;
+    $('startTitle').textContent = 'Buat ruang kelompok dari PDF';
+    $('startSub').textContent = 'Kamu dapat kode untuk teman sekelompok. Tanpa akun.';
+    $('startSub').hidden = false;
   }
   if (ROOM_EDIT) {
     show('busy');
     $('busyTitle').textContent = 'Membuka lembar ruang…';
+    setBar(0.5);
     fetch('/api/room/sheet', { credentials: 'same-origin', cache: 'no-store' }).then(async (r) => {
       if (r.headers.get('X-Sheet-Editable') !== '1') throw new Error(r.status === 401 ? 'Masuk ke ruang dulu.' : 'Lembar ini dikelola guru, tidak bisa diubah dari ruang.');
       openSheet(await r.json(), 'room-edit');
@@ -922,14 +1074,14 @@ function init() {
 
   // Reopen the sheet in the URL hash (a reload keeps you where you were).
   const key = decodeURIComponent(location.hash.slice(1));
-  const home = () => { showRecent(); if (!GROUP) renderCloudStart(); };
   refreshMe().then(() => {
-    if (GROUP) { $('accountBtn').hidden = true; $('publishItem').hidden = true; return; }
-    if (!$('start').hidden) renderCloudStart();
+    if (GROUP) { $('accountBtn').hidden = true; return; }
+    renderLogin();
+    if (!$('start').hidden) renderHome();
     updatePublishItem();
   });
-  if (key) store.get(key).then((rec) => { if (rec) openSheet(rec.sheet, key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); else home(); });
-  else home();
+  if (key) store.get(key).then((rec) => { if (rec) openSheet(rec.sheet, key, rec.projectId ? { id: rec.projectId, role: 'owner' } : null); else renderHome(); });
+  else renderHome();
 }
 
 init();

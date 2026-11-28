@@ -47,10 +47,10 @@ try {
   await drag(r0.x + 30, r0.y + 20, r0.x + 30, r0.y + 47);
   const y1 = await b.eval(`studio.sheet.pages[0].fields.find(f => f.id === 'p1-f6').y`);
   check('dragging a field moves it (27px at 135% = 20pt)', Math.abs(y1 - y0 - 20) < 1.5, `${y0} -> ${y1}`);
-  check('the dragged field is selected in the inspector', await b.eval(`document.querySelector('.insp h2').textContent.startsWith('2. Jelaskan')`));
+  check('the dragged field is selected in the inspector', await b.eval(`document.querySelector('.insp .name-input').value.startsWith('2. Jelaskan')`));
 
   // ---- rename + change kind through the inspector
-  await b.eval(`(() => { const i = document.querySelector('.insp input[type=text]'); i.value = 'Pengaruh sinar matahari'; i.dispatchEvent(new Event('change')); })()`);
+  await b.eval(`(() => { const i = document.querySelector('.insp .name-input'); i.value = 'Pengaruh sinar matahari'; i.dispatchEvent(new Event('change')); })()`);
   check('renaming updates the sheet', await b.eval(`studio.sheet.pages[0].fields.find(f => f.id === 'p1-f6').label`) === 'Pengaruh sinar matahari');
 
   // ---- undo twice restores position
@@ -68,13 +68,46 @@ try {
   check('Delete removes the selected field', await b.eval(`studio.sheet.pages[0].fields.filter(f => f.source === 'manual').length`) === 0);
 
   // ---- pages: delete + undo, move
-  await b.eval(`[...document.querySelectorAll('.page-acts button')].find(x => x.getAttribute('aria-label') === 'Hapus halaman 2').click()`);
+  await b.eval(`[...document.querySelectorAll('.pg-bar button')].find(x => x.getAttribute('aria-label') === 'Hapus halaman 2').click()`);
   check('deleting a page removes it', await b.eval(`studio.sheet.pages.length`) === 1 && await b.eval(`document.querySelectorAll('.esh-page').length`) === 1);
   await b.eval(`document.getElementById('undoBtn').click()`);
   check('undo brings the page back with its fields', await b.eval(`studio.sheet.pages.length === 2 && studio.sheet.pages[1].fields.length === 14 && document.querySelectorAll('.esh-page').length === 2`));
-  await b.eval(`[...document.querySelectorAll('.page-acts button')].find(x => x.getAttribute('aria-label') === 'Turunkan halaman 1').click()`);
+  await b.eval(`[...document.querySelectorAll('.pg-bar button')].find(x => x.getAttribute('aria-label') === 'Turunkan halaman 1').click()`);
   check('moving a page reorders the sheet', await b.eval(`studio.sheet.pages.map(p => p.id).join()`) === 'p2,p1');
   await b.eval(`document.getElementById('undoBtn').click()`);
+
+  // ---- naming flow: the to-do button and Enter walk through unnamed fields
+  await b.eval(`(() => { const f = studio.sheet.pages[0].fields; f[1].label = ''; f[3].label = ''; document.querySelector('[data-mode=preview]').click(); document.querySelector('[data-mode=design]').click(); })()`);
+  await b.waitFor(`document.querySelector('.canvas.design .esh-sheet')?.dataset.ready && document.querySelector('.todo')`);
+  check('the panel says what is left to do', await b.eval(`document.querySelector('.todo').textContent.includes('2 isian')`));
+  check('unnamed boxes are marked on the page', await b.eval(`document.querySelectorAll('.st-fb.unnamed').length`) === 2);
+  await b.eval(`document.querySelector('.todo').click()`);
+  await new Promise((r) => setTimeout(r, 100));
+  const first = await b.eval(`studio.sheet.pages[0].fields[1].id`);
+  check('the to-do button opens the first unnamed field', await b.eval(`document.querySelector('.st-fb.sel')?.dataset.id`) === first);
+  await b.eval(`document.querySelector('.name-input').focus()`);
+  await b.type('Kelas');
+  await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await new Promise((r) => setTimeout(r, 100));
+  check('Enter names it and moves to the next unnamed field', await b.eval(`studio.sheet.pages[0].fields[1].label === 'Kelas' && document.querySelector('.st-fb.sel')?.dataset.id === studio.sheet.pages[0].fields[3].id && document.activeElement.classList.contains('name-input')`));
+  await b.type('Nilai');
+  await b.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await new Promise((r) => setTimeout(r, 100));
+  check('after the last one the list says all are named', await b.eval(`!document.querySelector('.st-fb.sel') && !!document.querySelector('.done-note')`));
+  check('the mode pill sits under the selected segment', await b.eval(`(() => { const i = document.getElementById('segInd').getBoundingClientRect(), s = document.querySelector('[data-mode=design]').getBoundingClientRect(); return Math.abs(i.left - s.left) < 1 && Math.abs(i.width - s.width) < 1; })()`));
+
+  // ---- phone: one column, the panel is a bottom sheet that opens on selection
+  await b.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 780, deviceScaleFactor: 2, mobile: true });
+  await new Promise((r) => setTimeout(r, 600));
+  check('phone: nothing wider than the screen', await b.eval(`document.documentElement.scrollWidth <= 390 && document.body.scrollWidth <= 390`));
+  check('phone: the panel peeks at the bottom', await b.eval(`(() => { const r = document.getElementById('panel').getBoundingClientRect(); return r.top > 780 - 100 && r.top < 780; })()`));
+  await b.eval(`(() => { const el = document.querySelector('.st-fb'); const r = el.getBoundingClientRect(); const o = { bubbles: true, button: 0, clientX: r.x + 3, clientY: r.y + 3 }; el.dispatchEvent(new PointerEvent('pointerdown', o)); dispatchEvent(new PointerEvent('pointerup', o)); })()`);
+  await new Promise((r) => setTimeout(r, 700));
+  check('phone: selecting a field opens the sheet', await b.eval(`document.getElementById('panel').classList.contains('open') && document.getElementById('panel').getBoundingClientRect().top < 400`));
+  await b.eval(`document.querySelector('.back').click(); document.getElementById('sheetHandle').click()`);
+  await b.send('Emulation.clearDeviceMetricsOverride');
+  await b.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await new Promise((r) => setTimeout(r, 400));
 
   // ---- preview: reflow pushes later content down
   await b.eval(`document.querySelector('[data-mode=preview]').click()`);
@@ -85,7 +118,7 @@ try {
   const after = await b.eval(`(() => { const t = [...document.querySelectorAll('.esh-t')].find(e => e.textContent.startsWith('3. Gambarkan')); return [t.getBoundingClientRect().top, document.querySelector('.esh-page').offsetHeight]; })()`);
   check('a long answer pushes the next question down', after[0] - before[0] > 40, `${Math.round(before[0])} -> ${Math.round(after[0])}`);
   check('the page grows by the same amount', Math.abs((after[1] - before[1]) * 1.35 - (after[0] - before[0])) < 3, `${before[1]} -> ${after[1]}`);
-  check('answer counter updates live', await b.eval(`document.querySelector('.insp .stat b').textContent`) === '1');
+  check('preview gives the sheet the whole width (no panel)', await b.eval(`getComputedStyle(document.getElementById('panel')).display === 'none' && !document.getElementById('printBtn').hidden && document.getElementById('addTool').hidden`));
 
   // ---- standalone export
   const html = await b.eval(`import('./export.js').then(m => m.buildStandaloneHtml(studio.sheet))`);
