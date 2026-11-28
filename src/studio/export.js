@@ -29,7 +29,7 @@ export async function buildStandaloneHtml(sheet) {
     transition:border-radius .35s cubic-bezier(.42,1.67,.21,.90),transform .15s cubic-bezier(.31,.94,.34,1)}
   .bar button:active{border-radius:8px;transform:scale(.97)}
   .line{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden}
-  .line i{display:block;height:100%;background:#a80029;transform-origin:left;transform:scaleX(0);transition:transform .5s cubic-bezier(.39,1.29,.35,.98)}
+  .line i{display:block;height:100%;background:#a80029;transform-origin:left;transform:scaleX(0);transition:transform .5s cubic-bezier(.38,1.21,.22,1)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
   .bar .p{background:#a80029;color:#fff}
   .bar .t{background:#ffdad9;color:#2c1515}

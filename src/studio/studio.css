@@ -1,7 +1,9 @@
 /* ELKPD Studio: app chrome, so Material 3 Expressive (CONTRIBUTING.md).
-   Light scheme seeded from the gate's crimson (#a80029). Motion reuses the
-   gate's springs (src/gate/landing.js, E.spatialFast / E.spatialSlow), so the
-   whole app moves with one voice. Reduced motion = no animation (project
+   Light scheme seeded from the gate's crimson (#a80029). Motion uses the M3
+   Expressive spatial tokens the gate uses (src/gate/landing.js): fast
+   (.42,1.67,.21,.90 at 350ms) for small things, default (.38,1.21,.22,1 at
+   500ms) for views, panels and the snackbar; presses use the gate's
+   effects-fast. One motion vocabulary across the app. Reduced motion = no animation (project
    policy, docs/design-notes.md). */
 :root{
   --primary:#a80029; --on-primary:#fff; --primary-container:#ffdad9; --on-primary-container:#40000a;
@@ -14,7 +16,7 @@
   --shape-xs:4px; --shape-sm:8px; --shape-md:12px; --shape-lg:16px; --shape-xl:28px; --shape-full:999px;
   /* the gate's springs (M3 Expressive spatial) + effects */
   --spring-fast:cubic-bezier(.42,1.67,.21,.90); --d-spring-fast:350ms;
-  --spring:cubic-bezier(.39,1.29,.35,.98); --d-spring:500ms;
+  --spring:cubic-bezier(.38,1.21,.22,1); --d-spring:500ms; /* M3 Expressive default spatial: 500ms pairs with this curve (the gate's slow one, .39,1.29,.35,.98, pairs with 650ms) */
   --effects:cubic-bezier(.34,.80,.34,1); --effects-fast:cubic-bezier(.31,.94,.34,1); /* gate --e-effects-fast, 150ms presses */
   --d-fast:150ms; --d-med:250ms;
   --panel-w:340px; --peek:64px;
