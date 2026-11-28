@@ -26,7 +26,7 @@ export async function buildStandaloneHtml(sheet) {
   .bar h1{margin:0;font-size:16px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bar span{display:block;font-size:12px;line-height:16px;color:#534342;white-space:nowrap;font-variant-numeric:tabular-nums}
   .bar button{height:40px;padding:0 16px;border:0;border-radius:999px;font:500 14px/1 inherit;cursor:pointer;-webkit-user-select:none;user-select:none;
-    transition:border-radius .35s cubic-bezier(.42,1.67,.21,.90),transform .15s cubic-bezier(.23,1,.32,1)}
+    transition:border-radius .35s cubic-bezier(.42,1.67,.21,.90),transform .15s cubic-bezier(.31,.94,.34,1)}
   .bar button:active{border-radius:8px;transform:scale(.97)}
   .line{position:absolute;left:0;right:0;bottom:-1px;height:2px;overflow:hidden}
   .line i{display:block;height:100%;background:#a80029;transform-origin:left;transform:scaleX(0);transition:transform .5s cubic-bezier(.39,1.29,.35,.98)}
